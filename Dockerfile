@@ -16,4 +16,4 @@ COPY --from=build --chown=app:app \
 
 USER app
 EXPOSE 8080
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/medichannel.jar"]
+ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-Xms128m", "-Xmx240m", "-XX:MaxMetaspaceSize=110m", "-XX:ReservedCodeCacheSize=40m", "-Xss384k", "-XX:+UseSerialGC", "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/medichannel.jar"]
