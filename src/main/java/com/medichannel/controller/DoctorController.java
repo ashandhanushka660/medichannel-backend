@@ -76,4 +76,13 @@ public class DoctorController {
                 doctorService.updateAvailability(id, request)
         );
     }
+
+    // Admin/Manager deletes a doctor.
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteDoctor(
+            @PathVariable UUID id
+    ) {
+        doctorService.deleteDoctor(id);
+        return ResponseEntity.noContent().build();
+    }
 }

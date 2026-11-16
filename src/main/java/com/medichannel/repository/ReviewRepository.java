@@ -33,6 +33,8 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
 
     long countByDoctor_Id(UUID doctorId);
 
+    void deleteByDoctor_Id(UUID doctorId);
+
     @Query("""
             SELECT AVG(r.rating)
             FROM Review r

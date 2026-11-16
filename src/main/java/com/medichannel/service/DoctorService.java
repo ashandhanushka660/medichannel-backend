@@ -24,7 +24,10 @@ import com.medichannel.entity.User;
 import com.medichannel.enums.NotificationType;
 import com.medichannel.exception.ConflictException;
 import com.medichannel.exception.ResourceNotFoundException;
+import com.medichannel.repository.AppointmentRepository;
 import com.medichannel.repository.DoctorRepository;
+import com.medichannel.repository.DoctorSessionRepository;
+import com.medichannel.repository.ReviewRepository;
 import com.medichannel.repository.RoleRepository;
 import com.medichannel.repository.SpecialisationRepository;
 import com.medichannel.repository.UserRepository;
@@ -42,6 +45,9 @@ public class DoctorService {
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
     private final NotificationService notificationService;
+    private final AppointmentRepository appointmentRepository;
+    private final DoctorSessionRepository doctorSessionRepository;
+    private final ReviewRepository reviewRepository;
 
     public DoctorService(
             DoctorRepository doctorRepository,
@@ -50,7 +56,10 @@ public class DoctorService {
             SpecialisationRepository specialisationRepository,
             PasswordEncoder passwordEncoder,
             AuditLogService auditLogService,
-            NotificationService notificationService
+            NotificationService notificationService,
+            AppointmentRepository appointmentRepository,
+            DoctorSessionRepository doctorSessionRepository,
+            ReviewRepository reviewRepository
     ) {
         this.doctorRepository = doctorRepository;
         this.userRepository = userRepository;
@@ -59,6 +68,9 @@ public class DoctorService {
         this.passwordEncoder = passwordEncoder;
         this.auditLogService = auditLogService;
         this.notificationService = notificationService;
+        this.appointmentRepository = appointmentRepository;
+        this.doctorSessionRepository = doctorSessionRepository;
+        this.reviewRepository = reviewRepository;
     }
 
     /*
@@ -298,6 +310,52 @@ public class DoctorService {
         }
 
         return value.trim();
+    }
+
+    @Transactional
+    @CacheEvict(cacheNames = CacheConfig.PUBLIC_DOCTORS, allEntries = true)
+    public void deleteDoctor(UUID doctorId) {
+        Doctor doctor = findDoctor(doctorId);
+        User user = doctor.getUser();
+
+        boolean hasAppointments = appointmentRepository.existsBySession_Doctor_Id(doctorId);
+        if (hasAppointments) {
+            // Safe clinical retention: When patient appointments exist, disable the doctor
+            // and user account rather than breaking referential integrity.
+            doctor.updateAvailability(false);
+            user.disable();
+            doctorRepository.save(doctor);
+            userRepository.save(user);
+            auditLogService.log(
+                    "system",
+                    "STAFF",
+                    "Doctor deactivated",
+                    "Doctor " + doctor.getFirstName() + " " + doctor.getLastName() + " (SLMC " + doctor.getRegistrationNumber() + ") archived/disabled due to existing appointment records.",
+                    "0.0.0.0"
+            );
+            return;
+        }
+
+        try {
+            reviewRepository.deleteByDoctor_Id(doctorId);
+        } catch (Exception ignored) {
+        }
+
+        try {
+            doctorSessionRepository.deleteByDoctor_Id(doctorId);
+        } catch (Exception ignored) {
+        }
+
+        doctorRepository.delete(doctor);
+        userRepository.delete(user);
+
+        auditLogService.log(
+                "system",
+                "STAFF",
+                "Doctor deleted",
+                "Doctor " + doctor.getFirstName() + " " + doctor.getLastName() + " (SLMC " + doctor.getRegistrationNumber() + ") permanently removed.",
+                "0.0.0.0"
+        );
     }
 
     private void validatePassword(String password, String confirmPassword) {

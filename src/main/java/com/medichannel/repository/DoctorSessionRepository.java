@@ -28,6 +28,10 @@ public interface DoctorSessionRepository
             LocalDate sessionDate
     );
 
+    List<DoctorSession> findByDoctor_Id(UUID doctorId);
+
+    void deleteByDoctor_Id(UUID doctorId);
+
     List<DoctorSession> findBySessionDateAndStatus(
             LocalDate date,
             SessionStatus status

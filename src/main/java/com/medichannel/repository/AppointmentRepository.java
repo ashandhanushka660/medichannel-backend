@@ -62,6 +62,9 @@ public interface AppointmentRepository
             UUID userId
     );
 
+    // Check whether any appointments exist for the specified doctor.
+    boolean existsBySession_Doctor_Id(UUID doctorId);
+
     // Check whether a patient already has an active appointment
     // in the specified session.
     boolean existsBySession_IdAndPatient_IdAndStatusIn(

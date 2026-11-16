@@ -240,6 +240,21 @@ public class SecurityConfig {
                                 "/api/v1/admin/stats"
                         ).hasAnyRole("ADMIN", "MANAGER")
 
+                        // Staff account consoles. The service layer limits
+                        // managers to non-administrator accounts.
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/v1/admin/users"
+                        ).hasAnyRole("ADMIN", "MANAGER")
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/api/v1/admin/users/*"
+                        ).hasAnyRole("ADMIN", "MANAGER")
+                        .requestMatchers(
+                                HttpMethod.DELETE,
+                                "/api/v1/admin/users/*"
+                        ).hasAnyRole("ADMIN", "MANAGER")
+
                         // Administration.
                         .requestMatchers(
                                 "/api/v1/admin",
@@ -260,19 +275,23 @@ public class SecurityConfig {
                                 "/api/v1/specialisations/**"
                         ).permitAll()
 
-                        // Doctor account creation is ADMIN-only; managers
-                        // may maintain the clinical profile but may not
-                        // provision privileged accounts.
+                        // Doctor account creation is available to the IT
+                        // administrator and the channelling manager; the
+                        // service still owns all validation.
                         .requestMatchers(
                                 HttpMethod.POST,
                                 "/api/v1/doctors"
-                        ).hasRole("ADMIN")
+                        ).hasAnyRole("ADMIN", "MANAGER")
                         .requestMatchers(
                                 HttpMethod.PUT,
                                 "/api/v1/doctors/**"
                         ).hasAnyRole("ADMIN", "MANAGER")
                         .requestMatchers(
                                 HttpMethod.PATCH,
+                                "/api/v1/doctors/**"
+                        ).hasAnyRole("ADMIN", "MANAGER")
+                        .requestMatchers(
+                                HttpMethod.DELETE,
                                 "/api/v1/doctors/**"
                         ).hasAnyRole("ADMIN", "MANAGER")
 
