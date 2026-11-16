@@ -15,7 +15,9 @@ import com.medichannel.dto.admin.AdminPaymentResponse;
 import com.medichannel.dto.admin.AdminStatsResponse;
 import com.medichannel.dto.admin.AdminUserResponse;
 import com.medichannel.dto.admin.CreateManagerRequest;
+import com.medichannel.dto.admin.CreateUserRequest;
 import com.medichannel.dto.admin.ResetStaffPasswordRequest;
+import com.medichannel.dto.admin.UpdateUserRequest;
 import com.medichannel.enums.AppointmentStatus;
 import com.medichannel.service.AdminService;
 
@@ -35,6 +37,42 @@ public class AdminController {
             @RequestParam(required = false) String status
     ) {
         return ResponseEntity.ok(adminService.listUsers(role, status));
+    }
+
+    @PostMapping("/users")
+    public ResponseEntity<AdminUserResponse> createUser(
+            @AuthenticationPrincipal Jwt jwt,
+            @jakarta.validation.Valid
+            @RequestBody CreateUserRequest request
+    ) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
+                .body(adminService.createUser(actingAdminId(jwt), request));
+    }
+
+    @PatchMapping("/users/{userId}")
+    public ResponseEntity<AdminUserResponse> updateUser(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID userId,
+            @jakarta.validation.Valid
+            @RequestBody UpdateUserRequest request
+    ) {
+        return ResponseEntity.ok(
+                adminService.updateUser(
+                        actingAdminId(jwt),
+                        userId,
+                        request
+                )
+        );
+    }
+
+    @DeleteMapping("/users/{userId}")
+    public ResponseEntity<AdminUserResponse> deleteUser(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID userId
+    ) {
+        return ResponseEntity.ok(
+                adminService.deleteUser(actingAdminId(jwt), userId)
+        );
     }
 
     @PostMapping("/managers")

@@ -13,8 +13,12 @@ import com.medichannel.dto.admin.AdminPaymentResponse;
 import com.medichannel.dto.admin.AdminStatsResponse;
 import com.medichannel.dto.admin.AdminUserResponse;
 import com.medichannel.dto.admin.CreateManagerRequest;
+import com.medichannel.dto.admin.CreateUserRequest;
 import com.medichannel.dto.admin.ResetStaffPasswordRequest;
+import com.medichannel.dto.admin.UpdateUserRequest;
 import com.medichannel.entity.Appointment;
+import com.medichannel.entity.Doctor;
+import com.medichannel.entity.Patient;
 import com.medichannel.entity.Payment;
 import com.medichannel.entity.Role;
 import com.medichannel.entity.User;
@@ -22,6 +26,7 @@ import com.medichannel.enums.AppointmentStatus;
 import com.medichannel.enums.NotificationType;
 import com.medichannel.enums.PaymentTransactionStatus;
 import com.medichannel.exception.ConflictException;
+import com.medichannel.exception.ForbiddenOperationException;
 import com.medichannel.exception.ResourceNotFoundException;
 import com.medichannel.repository.AppointmentRepository;
 import com.medichannel.repository.DoctorRepository;
@@ -232,6 +237,212 @@ public class AdminService {
     }
 
     /**
+     * Creates an ADMIN, MANAGER or CUSTOMER account from a staff console.
+     * Managers may not create administrators; that check is enforced here
+     * rather than only in the UI. DOCTOR accounts are created through the
+     * doctor endpoint because they also need a clinical profile.
+     */
+    @Transactional
+    public AdminUserResponse createUser(
+            UUID actingAdminId,
+            CreateUserRequest request
+    ) {
+        User actor = findUser(actingAdminId);
+        String actorRole = actor.getRole().getName();
+        String role = request.role().trim().toUpperCase(Locale.ROOT);
+
+        if (!List.of("ADMIN", "MANAGER", "CUSTOMER").contains(role)) {
+            throw new IllegalArgumentException(
+                    "Only administrator, manager and patient accounts can be created here."
+            );
+        }
+
+        if ("MANAGER".equals(actorRole) && "ADMIN".equals(role)) {
+            throw new ForbiddenOperationException(
+                    "Managers cannot create administrator accounts."
+            );
+        }
+
+        if (!request.password().equals(request.confirmPassword())) {
+            throw new IllegalArgumentException(
+                    "Password and confirmation do not match."
+            );
+        }
+
+        PasswordPolicy.validate(request.password());
+
+        String normalizedEmail = request.email()
+                .trim()
+                .toLowerCase(Locale.ROOT);
+
+        if (userRepository.existsByEmail(normalizedEmail)) {
+            throw new ConflictException(
+                    "An account with this email already exists."
+            );
+        }
+
+        Role accountRole = roleRepository.findByName(role)
+                .orElseThrow(() -> new IllegalStateException(
+                        "The required " + role + " role is not configured."
+                ));
+
+        User user = new User(
+                accountRole,
+                normalizedEmail,
+                passwordEncoder.encode(request.password())
+        );
+        user.activateByAdministrator();
+
+        User saved = userRepository.saveAndFlush(user);
+
+        if ("CUSTOMER".equals(role)) {
+            String firstName = request.firstName() == null
+                    ? ""
+                    : request.firstName().trim();
+            String lastName = request.lastName() == null
+                    ? ""
+                    : request.lastName().trim();
+
+            if (firstName.isEmpty() || lastName.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "First name and last name are required for patient accounts."
+                );
+            }
+
+            Patient patient = new Patient(
+                    saved,
+                    dataProtectionService.encrypt(firstName),
+                    dataProtectionService.encrypt(lastName),
+                    null,
+                    null,
+                    null,
+                    null
+            );
+            patientRepository.saveAndFlush(patient);
+        }
+
+        auditLogService.log(
+                actor.getEmail(),
+                actorRole,
+                "Account created (" + role + ")",
+                "Account created for " + normalizedEmail,
+                "0.0.0.0"
+        );
+
+        return toUserResponse(saved);
+    }
+
+    /**
+     * Updates the email of a non-clinical account and, for patients, the
+     * encrypted display name. Doctor professional details use the doctor
+     * endpoint so the clinical profile stays consistent.
+     */
+    @Transactional
+    public AdminUserResponse updateUser(
+            UUID actingAdminId,
+            UUID userId,
+            UpdateUserRequest request
+    ) {
+        User actor = findUser(actingAdminId);
+        User user = findUser(userId);
+        ensureCanManage(actor, user);
+
+        String normalizedEmail = request.email()
+                .trim()
+                .toLowerCase(Locale.ROOT);
+
+        if (!normalizedEmail.equals(user.getEmail())) {
+            if (userRepository.existsByEmail(normalizedEmail)) {
+                throw new ConflictException(
+                        "An account with this email already exists."
+                );
+            }
+            user.changeEmail(normalizedEmail);
+        }
+
+        if ("CUSTOMER".equals(user.getRole().getName())) {
+            patientRepository.findByUserId(user.getId()).ifPresent(patient -> {
+                String firstName = request.firstName() == null
+                        ? ""
+                        : request.firstName().trim();
+                String lastName = request.lastName() == null
+                        ? ""
+                        : request.lastName().trim();
+
+                if (!firstName.isEmpty() && !lastName.isEmpty()) {
+                    patient.updateNames(
+                            dataProtectionService.encrypt(firstName),
+                            dataProtectionService.encrypt(lastName)
+                    );
+                    patientRepository.save(patient);
+                }
+            });
+        }
+
+        User saved = userRepository.saveAndFlush(user);
+
+        auditLogService.log(
+                actor.getEmail(),
+                actor.getRole().getName(),
+                "Account updated",
+                "Account details updated for " + saved.getEmail(),
+                "0.0.0.0"
+        );
+
+        return toUserResponse(saved);
+    }
+
+    /**
+     * Soft-deletes an account. Appointment, payment and consultation
+     * history must survive (BR-11), so the row is retained and the account
+     * is permanently disabled and its tokens revoked.
+     */
+    @Transactional
+    public AdminUserResponse deleteUser(
+            UUID actingAdminId,
+            UUID userId
+    ) {
+        User actor = findUser(actingAdminId);
+        User user = findUser(userId);
+
+        if (user.getId().equals(actingAdminId)) {
+            throw new ConflictException(
+                    "Administrators cannot delete their own account."
+            );
+        }
+
+        ensureCanManage(actor, user);
+        preventSelfLockout(actingAdminId, user);
+
+        user.softDelete();
+        userRepository.saveAndFlush(user);
+
+        doctorRepository.findByUserId(user.getId()).ifPresent(doctor -> {
+            doctor.updateAvailability(false);
+            doctorRepository.save(doctor);
+        });
+
+        auditLogService.log(
+                actor.getEmail(),
+                actor.getRole().getName(),
+                "Account deleted",
+                "Account permanently disabled for " + user.getEmail(),
+                "0.0.0.0"
+        );
+
+        return toUserResponse(user);
+    }
+
+    private void ensureCanManage(User actor, User target) {
+        if ("MANAGER".equals(actor.getRole().getName())
+                && "ADMIN".equals(target.getRole().getName())) {
+            throw new ForbiddenOperationException(
+                    "Managers cannot manage administrator accounts."
+            );
+        }
+    }
+
+    /**
      * ADMIN-only: reset a DOCTOR or MANAGER password. Resetting a password
      * revokes every existing token for that account.
      */
@@ -407,7 +618,10 @@ public class AdminService {
                 user.getFailedLoginAttempts(),
                 user.getLockedUntil(),
                 user.getLastLoginAt(),
-                user.getCreatedAt()
+                user.getCreatedAt(),
+                doctorRepository.findByUserId(user.getId())
+                        .map(Doctor::getId)
+                        .orElse(null)
         );
     }
 

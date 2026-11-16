@@ -13,7 +13,8 @@ public record AdminUserResponse(
         int failedLoginAttempts,
         Instant lockedUntil,
         Instant lastLoginAt,
-        Instant createdAt
+        Instant createdAt,
+        UUID doctorId
 
 ) {
 }

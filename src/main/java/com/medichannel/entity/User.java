@@ -166,6 +166,22 @@ public class User {
         this.lockedUntil = null;
     }
 
+    // Soft delete. Records with history are never removed (BR-11), so the
+    // account is disabled permanently and every issued token is revoked.
+    public void softDelete() {
+        this.accountStatus = "DELETED";
+        this.lockedUntil = null;
+        this.failedLoginAttempts = 0;
+        incrementTokenVersion();
+    }
+
+    public void changeEmail(String email) {
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Email is required.");
+        }
+        this.email = email;
+    }
+
     // Remove a temporary lock without granting a new verification status.
     public void unlock() {
         if (!"LOCKED".equals(accountStatus)) {

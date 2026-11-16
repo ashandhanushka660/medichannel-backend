@@ -151,6 +151,16 @@ public class Patient {
         this.genderEncrypted = genderEncrypted;
     }
 
+    // Staff consoles may correct a patient's name without touching the
+    // encrypted medical or contact fields.
+    public void updateNames(
+            String firstNameEncrypted,
+            String lastNameEncrypted
+    ) {
+        this.firstNameEncrypted = firstNameEncrypted;
+        this.lastNameEncrypted = lastNameEncrypted;
+    }
+
     @PreUpdate
     protected void onUpdate() {
         updatedAt = Instant.now();
