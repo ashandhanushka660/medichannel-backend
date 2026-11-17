@@ -474,6 +474,45 @@ public class AppointmentService {
         return toDoctorResponse(saved);
     }
 
+    /**
+     * Reception staff (manager or administrator) marks a booked
+     * appointment as arrived. Unlike the doctor variant this does not
+     * require the caller to own the session.
+     */
+    @Transactional
+    public AdminAppointmentResponse markArrivedByStaff(UUID appointmentId) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Appointment not found."
+                ));
+
+        if (appointment.getStatus() != AppointmentStatus.BOOKED) {
+            throw new ConflictException(
+                    "Only booked appointments can be marked as arrived."
+            );
+        }
+
+        appointment.markArrived(clock.instant());
+
+        Appointment saved = appointmentRepository.saveAndFlush(
+                appointment
+        );
+
+        notificationService.create(
+                saved.getPatient().getUser().getId(),
+                NotificationType.APPOINTMENT_ARRIVED,
+                "You are checked in",
+                "Your arrival for appointment #"
+                        + saved.getAppointmentNumber()
+                        + " has been recorded.",
+                saved.getId()
+        );
+
+        publishQueue(saved);
+
+        return toAdminResponse(saved);
+    }
+
     @Transactional
     public DoctorAppointmentResponse startConsultation(
             UUID doctorUserId,

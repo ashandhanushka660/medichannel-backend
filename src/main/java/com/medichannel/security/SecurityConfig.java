@@ -226,6 +226,18 @@ public class SecurityConfig {
                                 "/api/v1/notifications/**"
                         ).authenticated()
 
+                        // Reception desk: managers and administrators can
+                        // list appointments and record patient arrivals.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/admin/appointments",
+                                "/api/v1/admin/appointments/*"
+                        ).hasAnyRole("ADMIN", "MANAGER")
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/api/v1/admin/appointments/*/arrive"
+                        ).hasAnyRole("ADMIN", "MANAGER")
+
                         // Doctor consultation portal.
                         .requestMatchers(
                                 "/api/v1/doctor",

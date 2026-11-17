@@ -545,6 +545,11 @@ public class AdminService {
         return appointmentService.getForOversight(appointmentId);
     }
 
+    @Transactional
+    public AdminAppointmentResponse markAppointmentArrived(UUID appointmentId) {
+        return appointmentService.markArrivedByStaff(appointmentId);
+    }
+
     @Transactional(readOnly = true)
     public List<AdminPaymentResponse> getPayments() {
         return paymentRepository.findAllByOrderByCreatedAtDesc()

@@ -177,6 +177,15 @@ public class AdminController {
         );
     }
 
+    @PatchMapping("/appointments/{appointmentId}/arrive")
+    public ResponseEntity<AdminAppointmentResponse> markAppointmentArrived(
+            @PathVariable UUID appointmentId
+    ) {
+        return ResponseEntity.ok(
+                adminService.markAppointmentArrived(appointmentId)
+        );
+    }
+
     @GetMapping("/payments")
     public ResponseEntity<List<AdminPaymentResponse>> getPayments() {
         return ResponseEntity.ok(adminService.getPayments());
