@@ -86,7 +86,10 @@ Create a **Web Service** from the repository.
 | `DB_MIN_IDLE` | optional | Default `1` |
 
 `APP_FRONTEND_ORIGIN` must not be `*`. Empty or wildcard values fail startup by
-design.
+design. In addition to these explicit origins, `https://*.vercel.app` is allowed
+for HTTP CORS and the WebSocket handshake so Vercel preview and alias hostnames
+can use live chat without a backend redeploy. Non-Vercel origins must still be
+listed explicitly.
 
 ### Isolated development staging service
 
@@ -129,7 +132,8 @@ There is deliberately no hard-coded default administrator.
 - Endpoint: `wss://<backend-host>/ws`
 - The STOMP `CONNECT` frame must include `Authorization: Bearer <jwt>`.
 - The frontend origin must be listed in `APP_FRONTEND_ORIGIN` (same variable
-  drives HTTP CORS and the WebSocket handshake allow-list).
+  drives HTTP CORS and the WebSocket handshake allow-list), unless it is a
+  `*.vercel.app` hostname, which is allowed automatically.
 - Do **not** attempt to send the JWT as an HTTP header during the handshake;
   browsers cannot. The server intentionally permits the handshake and checks the
   token on `CONNECT`.

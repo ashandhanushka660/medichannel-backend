@@ -131,8 +131,9 @@ through the API.
 | `GET /api/v1/doctors/**`, `GET /api/v1/specialisations/**`, `GET /api/v1/sessions` | Public |
 | Doctor/specialisation/room/session management | ADMIN, MANAGER |
 
-CORS accepts only the comma-separated origins in `APP_FRONTEND_ORIGIN`; `*` and
-empty lists fail fast at startup. Credentials are disabled.
+CORS accepts the comma-separated origins in `APP_FRONTEND_ORIGIN` plus the
+`https://*.vercel.app` pattern for Vercel-hosted frontends; `*` and empty lists
+fail fast at startup. Credentials are disabled.
 
 ---
 

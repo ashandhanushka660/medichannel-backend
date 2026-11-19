@@ -215,7 +215,8 @@ content, sentAt }`. `limit` is capped at 500.
 
 ### WebSocket
 
-Endpoint: `/ws` (STOMP). Allowed origins: `APP_FRONTEND_ORIGIN`.
+Endpoint: `/ws` (STOMP). Allowed origins: `APP_FRONTEND_ORIGIN` plus
+`https://*.vercel.app` for Vercel-hosted frontends.
 
 STOMP headers on `CONNECT`:
 
