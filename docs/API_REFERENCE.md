@@ -255,21 +255,55 @@ Types: `APPOINTMENT_BOOKED`, `APPOINTMENT_ARRIVED`, `APPOINTMENT_CANCELLED`,
 
 ---
 
-## 10. Administration — ADMIN only
+## 10. Administration — ADMIN only, except reception
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/admin/users?role=&status=` | List users |
-| `GET` | `/admin/users/{userId}` | One user |
-| `PATCH` | `/admin/users/{userId}/activate` | Activate / verify |
-| `PATCH` | `/admin/users/{userId}/suspend` | Suspend |
-| `PATCH` | `/admin/users/{userId}/disable` | Disable |
-| `PATCH` | `/admin/users/{userId}/unlock` | Clear login lock |
-| `GET` | `/admin/stats` | User/appointment/payment totals |
-| `GET` | `/admin/appointments?sessionId=&doctorId=&status=&date=` | Oversight |
-| `GET` | `/admin/appointments/{appointmentId}` | One appointment |
-| `GET` | `/admin/payments` | All payments |
-| `GET` | `/admin/appointments/{appointmentId}/payments` | Payments for one appointment |
+User, room, audit and statistics endpoints are ADMIN-only. Reception appointment
+endpoints are also available to MANAGER.
+
+| Method | Path | Access | Description |
+|---|---|---|---|
+| `GET` | `/admin/users?role=&status=` | ADMIN | List users |
+| `GET` | `/admin/users/{userId}` | ADMIN | One user |
+| `PATCH` | `/admin/users/{userId}/activate` | ADMIN | Activate / verify |
+| `PATCH` | `/admin/users/{userId}/suspend` | ADMIN | Suspend |
+| `PATCH` | `/admin/users/{userId}/disable` | ADMIN | Disable |
+| `PATCH` | `/admin/users/{userId}/unlock` | ADMIN | Clear login lock |
+| `POST` | `/admin/users/{userId}/reset-password` | ADMIN | Set a new password for a DOCTOR or MANAGER |
+| `GET` | `/admin/stats` | ADMIN | User/appointment/payment totals |
+| `GET` | `/admin/appointments?sessionId=&doctorId=&status=&date=` | ADMIN, MANAGER | Oversight |
+| `GET` | `/admin/appointments/{appointmentId}` | ADMIN, MANAGER | One appointment |
+| `PATCH` | `/admin/appointments/{appointmentId}/arrive` | ADMIN, MANAGER | Mark a booked patient as arrived |
+| `GET` | `/admin/payments` | ADMIN | All payments |
+| `GET` | `/admin/appointments/{appointmentId}/payments` | ADMIN, MANAGER | Payments for one appointment |
+
+### Walk-in booking
+
+| Method | Path | Access | Description |
+|---|---|---|---|
+| `POST` | `/admin/appointments/walk-in` | ADMIN, MANAGER | Book a patient who is at the reception desk |
+
+Request body:
+
+```json
+{
+  "sessionId": "33333333-3333-3333-3333-333333333333",
+  "firstName": "Asha",
+  "lastName": "Perera",
+  "phone": "0712345678",
+  "reason": "Persistent headache"
+}
+```
+
+`phone` must match `07XXXXXXXX`. Staff booking reuses an existing patient record
+for that phone where possible; otherwise it creates an active CUSTOMER account
+and encrypted patient profile. The appointment is created as `BOOKED`, the queue
+is published, and the reception desk can then mark the patient arrived and
+record payment. Returns `201` with the appointment response.
+
+Password reset accepts `{ "newPassword": "...", "confirmPassword": "..." }`.
+The password must be 8–72 bytes with a letter, a number and a symbol. Only
+DOCTOR and MANAGER accounts can be reset; the action unlocks the account and
+increments the token version so every existing session is signed out.
 
 Self-suspension/disable and suspending/disabling the last active administrator
 return `409`. Unknown role filters return `400`.

@@ -237,6 +237,10 @@ public class SecurityConfig {
                                 HttpMethod.PATCH,
                                 "/api/v1/admin/appointments/*/arrive"
                         ).hasAnyRole("ADMIN", "MANAGER")
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/v1/admin/appointments/walk-in"
+                        ).hasAnyRole("ADMIN", "MANAGER")
 
                         // Doctor consultation portal.
                         .requestMatchers(

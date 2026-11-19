@@ -16,6 +16,8 @@ import com.medichannel.dto.admin.CreateManagerRequest;
 import com.medichannel.dto.admin.CreateUserRequest;
 import com.medichannel.dto.admin.ResetStaffPasswordRequest;
 import com.medichannel.dto.admin.UpdateUserRequest;
+import com.medichannel.dto.appointment.AppointmentResponse;
+import com.medichannel.dto.appointment.WalkInBookingRequest;
 import com.medichannel.entity.Appointment;
 import com.medichannel.entity.Doctor;
 import com.medichannel.entity.Patient;
@@ -548,6 +550,14 @@ public class AdminService {
     @Transactional
     public AdminAppointmentResponse markAppointmentArrived(UUID appointmentId) {
         return appointmentService.markArrivedByStaff(appointmentId);
+    }
+
+    @Transactional
+    public AppointmentResponse bookWalkIn(
+            UUID staffUserId,
+            WalkInBookingRequest request
+    ) {
+        return appointmentService.bookWalkIn(staffUserId, request);
     }
 
     @Transactional(readOnly = true)

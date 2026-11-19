@@ -8,6 +8,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +16,7 @@ import com.medichannel.config.TimeConfiguration;
 import com.medichannel.dto.admin.AdminAppointmentResponse;
 import com.medichannel.dto.appointment.AppointmentBookingRequest;
 import com.medichannel.dto.appointment.AppointmentResponse;
+import com.medichannel.dto.appointment.WalkInBookingRequest;
 import com.medichannel.dto.doctor.DoctorAppointmentResponse;
 import com.medichannel.dto.queue.CompleteAndAdvanceResponse;
 import com.medichannel.dto.queue.SessionQueueResponse;
@@ -22,6 +24,7 @@ import com.medichannel.dto.queue.SessionQueueSummary;
 import com.medichannel.entity.Appointment;
 import com.medichannel.entity.DoctorSession;
 import com.medichannel.entity.Patient;
+import com.medichannel.entity.Role;
 import com.medichannel.entity.User;
 import com.medichannel.enums.AppointmentStatus;
 import com.medichannel.enums.ConsultationType;
@@ -35,6 +38,7 @@ import com.medichannel.repository.AppointmentRepository;
 import com.medichannel.repository.DoctorSessionRepository;
 import com.medichannel.repository.NotificationRepository;
 import com.medichannel.repository.PatientRepository;
+import com.medichannel.repository.RoleRepository;
 import com.medichannel.repository.UserRepository;
 import com.medichannel.security.PatientDataProtectionService;
 
@@ -54,6 +58,8 @@ public class AppointmentService {
     private final UserRepository userRepository;
     private final NotificationRepository notificationRepository;
     private final PatientDataProtectionService dataProtectionService;
+    private final RoleRepository roleRepository;
+    private final PasswordEncoder passwordEncoder;
     private final NotificationService notificationService;
     private final AppointmentAccessPolicy accessPolicy;
     private final SessionQueueService sessionQueueService;
@@ -69,6 +75,8 @@ public class AppointmentService {
             UserRepository userRepository,
             NotificationRepository notificationRepository,
             PatientDataProtectionService dataProtectionService,
+            RoleRepository roleRepository,
+            PasswordEncoder passwordEncoder,
             NotificationService notificationService,
             AppointmentAccessPolicy accessPolicy,
             SessionQueueService sessionQueueService,
@@ -80,6 +88,8 @@ public class AppointmentService {
         this.userRepository = userRepository;
         this.notificationRepository = notificationRepository;
         this.dataProtectionService = dataProtectionService;
+        this.roleRepository = roleRepository;
+        this.passwordEncoder = passwordEncoder;
         this.notificationService = notificationService;
         this.accessPolicy = accessPolicy;
         this.sessionQueueService = sessionQueueService;
@@ -94,14 +104,65 @@ public class AppointmentService {
     ) {
         Patient patient = getEligiblePatient(authenticatedUserId);
 
+        DoctorSession session = findBookableSession(request.sessionId());
+        return createAppointment(session, patient, request.reason());
+    }
+
+    /**
+     * POST: reception books an appointment for a patient who is physically
+     * present. Staff may not use the patient self-booking endpoint because
+     * it derives the patient from the authenticated account.
+     */
+    @Transactional
+    public AppointmentResponse bookWalkIn(
+            UUID staffUserId,
+            WalkInBookingRequest request
+    ) {
+        User staff = userRepository.findByIdWithRole(staffUserId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "User account was not found."
+                ));
+
+        String staffRole = staff.getRole().getName();
+        if (!"ADMIN".equals(staffRole) && !"MANAGER".equals(staffRole)) {
+            throw new ForbiddenOperationException(
+                    "Only reception staff can book for walk-in patients."
+            );
+        }
+
+        String phone = request.phone().trim().replaceAll("[\\s-]", "");
+        if (!phone.matches("07[0-9]{8}")) {
+            throw new IllegalArgumentException(
+                    "Please provide a valid mobile number in the 07XXXXXXXX format."
+            );
+        }
+
+        Patient patient = findOrCreateWalkInPatient(
+                request.firstName().trim(),
+                request.lastName().trim(),
+                phone
+        );
+
+        DoctorSession session = findBookableSession(request.sessionId());
+        return createAppointment(session, patient, request.reason());
+    }
+
+    private DoctorSession findBookableSession(UUID sessionId) {
         DoctorSession session = doctorSessionRepository
-                .findById(request.sessionId())
+                .findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Consultation session was not found."
                 ));
 
         validateSessionCanBeBooked(session);
+        return session;
+    }
 
+    private AppointmentResponse createAppointment(
+            DoctorSession session,
+            Patient patient,
+            String reason
+    ) {
         boolean alreadyBooked =
                 appointmentRepository
                         .existsBySession_IdAndPatient_IdAndStatusIn(
@@ -116,13 +177,10 @@ public class AppointmentService {
             );
         }
 
-        String encryptedReason =
-                dataProtectionService.encrypt(request.reason().trim());
-
         Appointment appointment = new Appointment(
                 session,
                 patient,
-                encryptedReason
+                dataProtectionService.encrypt(reason.trim())
         );
 
         try {
@@ -157,6 +215,66 @@ public class AppointmentService {
             );
         }
     }
+
+    private Patient findOrCreateWalkInPatient(
+            String firstName,
+            String lastName,
+            String phone
+    ) {
+        String email = "walkin." + phone + "@medichannel.local";
+
+        Optional<User> existing = userRepository.findByEmail(email);
+        if (existing.isPresent()) {
+            User user = existing.get();
+            if (!"CUSTOMER".equals(user.getRole().getName())) {
+                throw new ConflictException(
+                        "This phone number is linked to a staff account."
+                );
+            }
+            return patientRepository.findByUserId(user.getId())
+                    .orElseGet(() -> createWalkInPatient(
+                            user, firstName, lastName, phone
+                    ));
+        }
+
+        Role customerRole = roleRepository.findByName("CUSTOMER")
+                .orElseThrow(() -> new IllegalStateException(
+                        "The required CUSTOMER role is not configured."
+                ));
+
+        // Walk-in patients do not sign in at the desk, so the generated
+        // credential is never disclosed. The account is active so staff
+        // can still record payments and the appointment is fully persisted.
+        User user = new User(
+                customerRole,
+                email,
+                passwordEncoder.encode(UUID.randomUUID().toString())
+        );
+        user.activateAfterVerification();
+        User savedUser = userRepository.saveAndFlush(user);
+
+        return createWalkInPatient(savedUser, firstName, lastName, phone);
+    }
+
+    private Patient createWalkInPatient(
+            User user,
+            String firstName,
+            String lastName,
+            String phone
+    ) {
+        Patient patient = new Patient(
+                user,
+                dataProtectionService.encrypt(firstName),
+                dataProtectionService.encrypt(lastName),
+                dataProtectionService.encrypt(phone),
+                null,
+                null,
+                null
+        );
+
+        return patientRepository.saveAndFlush(patient);
+    }
+
 
     // GET: List the authenticated customer's appointments.
     @Transactional(readOnly = true)

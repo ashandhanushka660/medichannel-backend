@@ -18,6 +18,8 @@ import com.medichannel.dto.admin.CreateManagerRequest;
 import com.medichannel.dto.admin.CreateUserRequest;
 import com.medichannel.dto.admin.ResetStaffPasswordRequest;
 import com.medichannel.dto.admin.UpdateUserRequest;
+import com.medichannel.dto.appointment.AppointmentResponse;
+import com.medichannel.dto.appointment.WalkInBookingRequest;
 import com.medichannel.enums.AppointmentStatus;
 import com.medichannel.service.AdminService;
 
@@ -184,6 +186,15 @@ public class AdminController {
         return ResponseEntity.ok(
                 adminService.markAppointmentArrived(appointmentId)
         );
+    }
+
+    @PostMapping("/appointments/walk-in")
+    public ResponseEntity<AppointmentResponse> bookWalkIn(
+            @AuthenticationPrincipal Jwt jwt,
+            @jakarta.validation.Valid @RequestBody WalkInBookingRequest request
+    ) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
+                .body(adminService.bookWalkIn(actingAdminId(jwt), request));
     }
 
     @GetMapping("/payments")
