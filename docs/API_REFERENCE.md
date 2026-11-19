@@ -28,8 +28,8 @@ other users' resources), `409` state conflict/duplicate, `500` unexpected.
 ```json
 {
   "email": "patient@example.com",
-  "password": "at-least-12-chars",
-  "confirmPassword": "at-least-12-chars"
+  "password": "8-72 chars with letter, number and symbol",
+  "confirmPassword": "8-72 chars with letter, number and symbol"
 }
 ```
 
@@ -39,7 +39,7 @@ while no email-verification provider is configured.
 ### `POST /api/v1/auth/login` — public
 
 ```json
-{ "email": "patient@example.com", "password": "at-least-12-chars" }
+{ "email": "patient@example.com", "password": "8-72 chars with letter, number and symbol" }
 ```
 
 `200` → `{ accessToken, tokenType, expiresIn, userId, email, role }`.
@@ -100,6 +100,14 @@ Booking rules: session must be `OPEN`, before the booking deadline (60 min
 physical / 30 min online), capacity available, one active booking per patient
 per session.
 
+### Live queue
+
+`GET /api/v1/sessions/{sessionId}/queue` returns the public queue summary
+(`sessionId`, `nowServing`, `nextNumber`, `remainingAppointments`,
+`maxAppointments`). Updates are broadcast to
+`/topic/sessions/{sessionId}/queue` over WebSocket; patients, doctors and
+managers may subscribe, but only staff may publish state transitions.
+
 ---
 
 ## 4. Payments — CUSTOMER, ADMIN, MANAGER
@@ -157,7 +165,7 @@ estimate, room, status, payment status/method, and lifecycle timestamps.
 |---|---|---|
 | `POST` | `/appointments/{appointmentId}/summary` | Assigned doctor, after `COMPLETED` |
 | `PUT` | `/appointments/{appointmentId}/summary` | Assigned doctor |
-| `GET` | `/appointments/{appointmentId}/summary` | Patient owner, assigned doctor, ADMIN/MANAGER |
+| `GET` | `/appointments/{appointmentId}/summary` | Patient owner or assigned doctor only |
 
 Request:
 
