@@ -42,7 +42,8 @@ public record AppointmentResponse(
         Instant consultationCompletedAt,
         Instant cancelledAt,
         String acceptanceStatus,
-        Instant doctorAcceptedAt
+        Instant doctorAcceptedAt,
+        String cancellationReason
 
 ) {
 }

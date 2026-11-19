@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 
 import com.medichannel.dto.appointment.AppointmentBookingRequest;
 import com.medichannel.dto.appointment.AppointmentResponse;
+import com.medichannel.dto.appointment.CancelAppointmentRequest;
 import com.medichannel.service.AppointmentService;
 
 @RestController
@@ -71,16 +72,19 @@ public class AppointmentController {
     @PatchMapping("/{appointmentId}/cancel")
     public ResponseEntity<AppointmentResponse> cancelAppointment(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID appointmentId
+            @PathVariable UUID appointmentId,
+            @Valid @RequestBody(required = false) CancelAppointmentRequest request
     ) {
         UUID userId = UUID.fromString(jwt.getSubject());
         String role = jwt.getClaimAsString("role");
+        String reason = request == null ? null : request.reason();
 
         return ResponseEntity.ok(
                 appointmentService.cancelAppointment(
                         userId,
                         role,
-                        appointmentId
+                        appointmentId,
+                        reason
                 )
         );
     }

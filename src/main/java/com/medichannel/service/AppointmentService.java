@@ -306,11 +306,14 @@ public class AppointmentService {
         return toResponse(appointment);
     }
 
-    // PATCH: Cancel an eligible unpaid appointment.
+    // PATCH: Cancel any appointment belonging to the signed-in patient.
+    // Demo rule: patients may cancel their own appointment at any time,
+    // including paid and completed bookings. A reason is required.
     @Transactional
     public AppointmentResponse cancelMyAppointment(
             UUID userId,
-            UUID appointmentId
+            UUID appointmentId,
+            String reason
     ) {
         getEligiblePatient(userId);
 
@@ -320,40 +323,24 @@ public class AppointmentService {
                         "Appointment was not found."
                 ));
 
-        if (appointment.getStatus() != AppointmentStatus.BOOKED) {
+        if (appointment.getStatus() == AppointmentStatus.CANCELLED) {
             throw new ConflictException(
-                    "Only booked appointments can be cancelled."
+                    "Appointment is already cancelled."
             );
         }
 
-        if (appointment.getPaymentStatus() != PaymentStatus.PENDING) {
-            throw new ConflictException(
-                    "Paid appointments cannot be cancelled through this operation."
-            );
+        String trimmedReason = reason == null ? "" : reason.trim();
+        if (trimmedReason.isBlank()) {
+            trimmedReason = "No reason provided";
+        }
+        if (trimmedReason.length() > 500) {
+            trimmedReason = trimmedReason.substring(0, 500);
         }
 
-        DoctorSession session = appointment.getSession();
-
-        LocalDateTime sessionStart = LocalDateTime.of(
-                session.getSessionDate(),
-                session.getStartTime()
+        appointment.cancelForPatient(
+                clock.instant(),
+                dataProtectionService.encrypt(trimmedReason)
         );
-
-        LocalDateTime cancellationDeadline = sessionStart.minusHours(3);
-
-        LocalDateTime now = LocalDateTime.now(
-                clock.withZone(TimeConfiguration.APPLICATION_ZONE)
-        );
-
-        // BR-07: Cancellation is allowed until the 3-hour deadline.
-        if (now.isAfter(cancellationDeadline)) {
-            throw new ConflictException(
-                    "Appointments can only be cancelled at least "
-                    + "3 hours before the session."
-            );
-        }
-
-        appointment.cancel(clock.instant());
 
         Appointment saved = appointmentRepository.saveAndFlush(
                 appointment
@@ -370,7 +357,8 @@ public class AppointmentService {
     public AppointmentResponse cancelAppointment(
             UUID userId,
             String role,
-            UUID appointmentId
+            UUID appointmentId,
+            String reason
     ) {
         if ("DOCTOR".equalsIgnoreCase(role)) {
             throw new ForbiddenOperationException(
@@ -392,7 +380,14 @@ public class AppointmentService {
                 throw new ConflictException("Completed appointments cannot be cancelled.");
             }
 
-            appointment.cancelByStaff(clock.instant());
+            String encryptedReason = null;
+            if (reason != null && !reason.trim().isBlank()) {
+                String trimmed = reason.trim();
+                encryptedReason = dataProtectionService.encrypt(
+                        trimmed.length() > 500 ? trimmed.substring(0, 500) : trimmed
+                );
+            }
+            appointment.cancelByStaff(clock.instant(), encryptedReason);
             Appointment saved = appointmentRepository.saveAndFlush(appointment);
 
             notifyAppointmentCancelled(saved);
@@ -401,7 +396,7 @@ public class AppointmentService {
             return toResponse(saved);
         }
 
-        return cancelMyAppointment(userId, appointmentId);
+        return cancelMyAppointment(userId, appointmentId, reason);
     }
 
     // PATCH: Patient check-in for their own booked appointment.
@@ -1139,7 +1134,12 @@ public class AppointmentService {
                 appointment.getConsultationCompletedAt(),
                 appointment.getCancelledAt(),
                 appointment.getAcceptanceStatus(),
-                appointment.getDoctorAcceptedAt()
+                appointment.getDoctorAcceptedAt(),
+                appointment.getCancellationReasonEncrypted() == null
+                        ? null
+                        : dataProtectionService.decrypt(
+                                appointment.getCancellationReasonEncrypted()
+                        )
         );
     }
 

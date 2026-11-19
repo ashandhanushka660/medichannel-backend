@@ -119,6 +119,9 @@ public class Appointment {
     @Column(name = "cancelled_at")
     private Instant cancelledAt;
 
+    @Column(name = "cancellation_reason_encrypted", columnDefinition = "TEXT")
+    private String cancellationReasonEncrypted;
+
     @Column(name = "arrived_at")
     private Instant arrivedAt;
 
@@ -185,7 +188,41 @@ public class Appointment {
         this.cancelledAt = cancellationTime;
     }
 
+    /**
+     * Patient-initiated cancellation for the demo workflow. Patients may
+     * cancel any of their own appointments, regardless of payment status or
+     * how close the session is, and must supply a reason.
+     */
+    public void cancelForPatient(
+        Instant cancellationTime,
+        String encryptedCancellationReason
+    ) {
+        if (status == AppointmentStatus.CANCELLED) {
+            throw new IllegalStateException("Appointment is already cancelled.");
+        }
+        if (cancellationTime == null) {
+            throw new IllegalArgumentException("Cancellation time is required.");
+        }
+        if (encryptedCancellationReason == null
+                || encryptedCancellationReason.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Cancellation reason is required."
+            );
+        }
+
+        this.status = AppointmentStatus.CANCELLED;
+        this.cancelledAt = cancellationTime;
+        this.cancellationReasonEncrypted = encryptedCancellationReason;
+    }
+
     public void cancelByStaff(Instant cancellationTime) {
+        cancelByStaff(cancellationTime, null);
+    }
+
+    public void cancelByStaff(
+        Instant cancellationTime,
+        String encryptedCancellationReason
+    ) {
         if (status == AppointmentStatus.CANCELLED) {
             throw new IllegalStateException("Appointment is already cancelled.");
         }
@@ -197,6 +234,10 @@ public class Appointment {
         }
         this.status = AppointmentStatus.CANCELLED;
         this.cancelledAt = cancellationTime;
+        if (encryptedCancellationReason != null
+                && !encryptedCancellationReason.isBlank()) {
+            this.cancellationReasonEncrypted = encryptedCancellationReason;
+        }
     }
 
     public void acceptByDoctor(Instant time) {
@@ -384,6 +425,10 @@ public class Appointment {
 
     public Instant getCancelledAt() {
         return cancelledAt;
+    }
+
+    public String getCancellationReasonEncrypted() {
+        return cancellationReasonEncrypted;
     }
 
     public Instant getArrivedAt() {
