@@ -2,6 +2,7 @@ package com.medichannel.security;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
@@ -53,6 +54,15 @@ import tools.jackson.databind.ObjectMapper;
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+
+    /**
+     * Vercel assigns a new preview hostname per deployment and rotates custom
+     * aliases, so pinning a single production origin leaves live chat broken
+     * whenever the frontend is served from another *.vercel.app hostname.
+     * Explicit origins from APP_FRONTEND_ORIGIN remain required; this pattern
+     * only adds Vercel's own domains, never a wildcard.
+     */
+    private static final String VERCEL_ORIGIN_PATTERN = "https://*.vercel.app";
 
     @Bean
     public SecurityFilterChain securityFilterChain(
@@ -433,8 +443,13 @@ public class SecurityConfig {
             );
         }
 
+        List<String> allowedPatterns = new ArrayList<>(origins);
+        if (!allowedPatterns.contains(VERCEL_ORIGIN_PATTERN)) {
+            allowedPatterns.add(VERCEL_ORIGIN_PATTERN);
+        }
+
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(origins);
+        configuration.setAllowedOriginPatterns(allowedPatterns);
         configuration.setAllowedMethods(List.of(
                 "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
         ));

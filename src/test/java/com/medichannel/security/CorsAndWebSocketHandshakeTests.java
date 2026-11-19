@@ -70,6 +70,19 @@ class CorsAndWebSocketHandshakeTests {
     }
 
     @Test
+    void preflightFromVercelDeploymentOriginIsAccepted() throws Exception {
+        String vercelOrigin = "https://ashandhanushka660-medichannel-f.vercel.app";
+        mockMvc.perform(
+            options("/api/v1/doctors")
+                .header("Origin", vercelOrigin)
+                .header("Access-Control-Request-Method", "GET")
+        )
+            .andExpect(status().isOk())
+            .andExpect(header().string(
+                "Access-Control-Allow-Origin", vercelOrigin));
+    }
+
+    @Test
     void webSocketHandshakeIsNotBlockedByHttpAuthentication()
             throws Exception {
         // A plain GET is not a real handshake, so the handshake handler may

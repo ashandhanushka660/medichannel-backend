@@ -1,5 +1,9 @@
 package com.medichannel.config;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 import com.medichannel.security.WebSocketAuthorizationInterceptor;
 import com.medichannel.security.WebSocketJwtInterceptor;
 
@@ -39,8 +43,17 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        List<String> allowedPatterns = new ArrayList<>(
+                Arrays.asList(frontendOrigin.trim().split("\\s*,\\s*"))
+        );
+        // Vercel preview and alias hostnames rotate; keep live chat working
+        // from any Vercel-served frontend while explicit origins stay pinned.
+        if (!allowedPatterns.contains("https://*.vercel.app")) {
+            allowedPatterns.add("https://*.vercel.app");
+        }
+
         registry.addEndpoint("/ws")
-                .setAllowedOrigins(frontendOrigin.trim().split("\\s*,\\s*"));
+                .setAllowedOriginPatterns(allowedPatterns.toArray(String[]::new));
     }
 
     @Override
