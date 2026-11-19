@@ -133,7 +133,9 @@ public class AdminService {
             UUID actingAdminId,
             UUID userId
     ) {
+        User actor = findUser(actingAdminId);
         User user = findUser(userId);
+        ensureCanManage(actor, user);
 
         if (user.getId().equals(actingAdminId)
                 && !"ACTIVE".equals(user.getAccountStatus())) {
@@ -154,7 +156,9 @@ public class AdminService {
             UUID actingAdminId,
             UUID userId
     ) {
+        User actor = findUser(actingAdminId);
         User user = findUser(userId);
+        ensureCanManage(actor, user);
         preventSelfLockout(actingAdminId, user);
 
         user.suspend();
@@ -169,7 +173,9 @@ public class AdminService {
             UUID actingAdminId,
             UUID userId
     ) {
+        User actor = findUser(actingAdminId);
         User user = findUser(userId);
+        ensureCanManage(actor, user);
         preventSelfLockout(actingAdminId, user);
 
         user.disable();
@@ -180,8 +186,14 @@ public class AdminService {
     }
 
     @Transactional
-    public AdminUserResponse unlockUser(UUID userId) {
+    public AdminUserResponse unlockUser(
+            UUID actingAdminId,
+            UUID userId
+    ) {
+        User actor = findUser(actingAdminId);
         User user = findUser(userId);
+        ensureCanManage(actor, user);
+
         user.unlock();
         return toUserResponse(user);
     }

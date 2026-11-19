@@ -234,6 +234,46 @@ class AdminPortalPostgresIntegrationTests {
     }
 
     @Test
+    void managerCannotSuspendDisableActivateOrUnlockAdminAccount()
+            throws Exception {
+
+        TestFixture fixture = createFixture();
+
+        Role managerRole = roleRepository.findByName("MANAGER").orElseThrow();
+        User managerUser = new User(
+                managerRole,
+                "manager.portal." + UUID.randomUUID().toString().replace("-", "") + "@example.test",
+                "test-password-hash"
+        );
+        managerUser.activateAfterVerification();
+        User savedManager = userRepository.saveAndFlush(managerUser);
+
+        RequestPostProcessor managerAuth = jwt().authorities(new SimpleGrantedAuthority("ROLE_MANAGER"))
+                .jwt(token -> token.subject(savedManager.getId().toString())
+                        .claim("role", "MANAGER"));
+
+        mockMvc.perform(
+                patch(ADMIN_URL + "/users/" + fixture.adminUserId() + "/suspend")
+                        .with(managerAuth)
+        ).andExpect(status().isForbidden());
+
+        mockMvc.perform(
+                patch(ADMIN_URL + "/users/" + fixture.adminUserId() + "/disable")
+                        .with(managerAuth)
+        ).andExpect(status().isForbidden());
+
+        mockMvc.perform(
+                patch(ADMIN_URL + "/users/" + fixture.adminUserId() + "/activate")
+                        .with(managerAuth)
+        ).andExpect(status().isForbidden());
+
+        mockMvc.perform(
+                patch(ADMIN_URL + "/users/" + fixture.adminUserId() + "/unlock")
+                        .with(managerAuth)
+        ).andExpect(status().isForbidden());
+    }
+
+    @Test
     void suspendedCustomerCannotLogInUntilAnAdminReactivatesThem()
             throws Exception {
 

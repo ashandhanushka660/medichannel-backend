@@ -141,9 +141,12 @@ public class AdminController {
 
     @PatchMapping("/users/{userId}/unlock")
     public ResponseEntity<AdminUserResponse> unlockUser(
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID userId
     ) {
-        return ResponseEntity.ok(adminService.unlockUser(userId));
+        return ResponseEntity.ok(
+                adminService.unlockUser(actingAdminId(jwt), userId)
+        );
     }
 
     @GetMapping("/stats")

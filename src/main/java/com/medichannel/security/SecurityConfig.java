@@ -274,7 +274,8 @@ public class SecurityConfig {
                         ).hasAnyRole("ADMIN", "MANAGER")
                         .requestMatchers(
                                 HttpMethod.PATCH,
-                                "/api/v1/admin/users/*"
+                                "/api/v1/admin/users/*",
+                                "/api/v1/admin/users/**"
                         ).hasAnyRole("ADMIN", "MANAGER")
                         .requestMatchers(
                                 HttpMethod.DELETE,
