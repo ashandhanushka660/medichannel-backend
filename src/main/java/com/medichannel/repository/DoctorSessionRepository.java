@@ -99,8 +99,7 @@ public interface DoctorSessionRepository
               )
               AND (
                     :consultationType IS NULL
-                    OR CAST(s.consultationType AS string)
-                        = CAST(:consultationType AS string)
+                    OR s.consultationType = :consultationType
               )
             ORDER BY s.sessionDate ASC, s.startTime ASC
             """)
