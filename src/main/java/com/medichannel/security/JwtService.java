@@ -40,6 +40,7 @@ public class JwtService {
         return WS_TICKET_LIFETIME_SECONDS;
     }
 
+    @Deprecated
     public String generateAccessToken(
             UUID userId,
             String email,

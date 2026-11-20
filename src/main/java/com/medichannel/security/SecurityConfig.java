@@ -501,24 +501,50 @@ public class SecurityConfig {
 
         OAuth2TokenValidator<Jwt> validateTokenVersion = token -> {
             Object verObj = token.getClaim("ver");
-            if (verObj instanceof Number verNum) {
-                try {
-                    UUID userId = UUID.fromString(token.getSubject());
-                    var userOpt = userRepository.findById(userId);
-                    if (userOpt.isEmpty() || userOpt.get().getTokenVersion() != verNum.intValue()
-                            || !"ACTIVE".equals(userOpt.get().getAccountStatus())) {
-                        return OAuth2TokenValidatorResult.failure(
-                                new OAuth2Error(
-                                        "invalid_token",
-                                        "The session has expired or has been revoked.",
-                                        null
-                                )
-                        );
-                    }
-                } catch (Exception ignored) {
-                    // fall through
-                }
+            if (!(verObj instanceof Number verNum)) {
+                return OAuth2TokenValidatorResult.failure(
+                        new OAuth2Error(
+                                "invalid_token",
+                                "The token is missing a valid version claim.",
+                                null
+                        )
+                );
             }
+
+            try {
+                String subject = token.getSubject();
+                if (subject == null || subject.isBlank()) {
+                    return OAuth2TokenValidatorResult.failure(
+                            new OAuth2Error(
+                                    "invalid_token",
+                                    "The token subject is missing.",
+                                    null
+                            )
+                    );
+                }
+
+                UUID userId = UUID.fromString(subject);
+                var userOpt = userRepository.findById(userId);
+                if (userOpt.isEmpty() || userOpt.get().getTokenVersion() != verNum.intValue()
+                        || !"ACTIVE".equals(userOpt.get().getAccountStatus())) {
+                    return OAuth2TokenValidatorResult.failure(
+                            new OAuth2Error(
+                                    "invalid_token",
+                                    "The session has expired or has been revoked.",
+                                    null
+                            )
+                    );
+                }
+            } catch (Exception exception) {
+                return OAuth2TokenValidatorResult.failure(
+                        new OAuth2Error(
+                                "invalid_token",
+                                "The session has expired or has been revoked.",
+                                null
+                        )
+                );
+            }
+
             return OAuth2TokenValidatorResult.success();
         };
 
