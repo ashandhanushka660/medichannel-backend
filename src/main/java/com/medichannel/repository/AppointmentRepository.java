@@ -52,6 +52,25 @@ public interface AppointmentRepository
             Collection<AppointmentStatus> statuses
     );
 
+    List<Appointment>
+            findBySession_IdAndAppointmentNumberGreaterThanEqualAndStatusInOrderByAppointmentNumberAsc(
+                    UUID sessionId,
+                    Integer appointmentNumber,
+                    Collection<AppointmentStatus> statuses
+            );
+
+    @Query("""
+            SELECT COUNT(a) FROM Appointment a
+            WHERE a.session.id = :sessionId
+              AND a.status IN :statuses
+              AND a.appointmentNumber <= :appointmentNumber
+            """)
+    long countActiveUpToNumber(
+            @Param("sessionId") UUID sessionId,
+            @Param("appointmentNumber") Integer appointmentNumber,
+            @Param("statuses") Collection<AppointmentStatus> statuses
+    );
+
     /**
      * The third active appointment strictly after the number currently
      * being served. Gaps left by cancelled appointments are ignored by

@@ -15,6 +15,8 @@ public final class ClinicSchedule {
     public static final LocalTime END_TIME = LocalTime.of(16, 0);
     public static final int HOURS = 8;
     public static final int MINUTES_PER_PATIENT = 10;
+    public static final int MAX_APPOINTMENTS_PER_DAY =
+            HOURS * (60 / MINUTES_PER_PATIENT);
 
     private ClinicSchedule() {
     }

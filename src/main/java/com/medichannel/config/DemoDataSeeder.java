@@ -38,6 +38,7 @@ import com.medichannel.entity.Specialisation;
 import com.medichannel.entity.User;
 import com.medichannel.enums.ConsultationType;
 import com.medichannel.enums.RoomType;
+import com.medichannel.enums.SessionStatus;
 import com.medichannel.repository.AppointmentRepository;
 import com.medichannel.repository.DoctorRepository;
 import com.medichannel.repository.DoctorSessionRepository;
@@ -596,26 +597,30 @@ public class DemoDataSeeder implements ApplicationRunner {
         logger.info("Demo manager created: {}", email);
     }
 
+    /**
+     * Every available doctor receives exactly one session per day. That
+     * session covers the whole published clinic day, so a doctor who is
+     * available at 07:00 is also available at 08:00 and every other clinic
+     * hour. The 10-minute slot length is enforced by the session service.
+     */
     private void seedSessions(List<Doctor> doctors, List<Room> rooms) {
         LocalDate today = LocalDate.now(clock);
+        List<Room> consultationRooms = rooms.stream()
+                .filter(room -> room.isActive()
+                        && room.getRoomType() != null
+                        && "CONSULTATION".equals(room.getRoomType().name()))
+                .sorted((left, right) ->
+                        left.getRoomNumber().compareTo(right.getRoomNumber()))
+                .toList();
 
-        for (int dayOffset = 0; dayOffset < 7; dayOffset++) {
-            LocalDate date = today.plusDays(dayOffset);
-
-            List<TimeSlot> slots = slotsFor(date, dayOffset == 0);
-
-            if (slots.isEmpty()) {
+        int doctorIndex = 0;
+        for (Doctor doctor : doctors) {
+            if (!doctor.isAvailable()) {
                 continue;
             }
 
-            for (int index = 0; index < doctors.size(); index++) {
-                // Stagger the roster so every day has a different mix of
-                // doctors, while each doctor still appears several times.
-                if ((index + dayOffset) % 2 != 0) {
-                    continue;
-                }
-
-                Doctor doctor = doctors.get(index);
+            for (int dayOffset = 0; dayOffset < 7; dayOffset++) {
+                LocalDate date = today.plusDays(dayOffset);
 
                 if (!doctorSessionRepository
                         .findByDoctor_IdAndSessionDate(
@@ -625,131 +630,44 @@ public class DemoDataSeeder implements ApplicationRunner {
                     continue;
                 }
 
-                TimeSlot slot = slots.get((index / 2) % slots.size());
+                Room room = consultationRooms.stream()
+                        .filter(candidate -> isRoomAvailable(candidate, date))
+                        .findFirst()
+                        .orElse(null);
+                boolean online = room == null;
 
-                boolean online = index >= rooms.size()
-                        || (index + dayOffset) % 3 == 0;
-
-                UUID roomId = online
-                        ? null
-                        : rooms.get(index % rooms.size()).getId();
-
-                DoctorSessionResponse session =
-                        doctorSessionService.createSession(
-                                new DoctorSessionRequest(
-                                        doctor.getId(),
-                                        roomId,
-                                        date,
-                                        slot.start(),
-                                        slot.end(),
-                                        online
-                                                ? ConsultationType.ONLINE
-                                                : ConsultationType.PHYSICAL,
-                                        slot.maxAppointments(),
-                                        slot.minutesPerPatient(),
-                                        FEES[index]
-                                )
-                        );
-
-                // createSession already opens the session for booking.
+                doctorSessionService.createSession(
+                        new DoctorSessionRequest(
+                                doctor.getId(),
+                                online ? null : room.getId(),
+                                date,
+                                ClinicSchedule.START_TIME,
+                                ClinicSchedule.END_TIME,
+                                online
+                                        ? ConsultationType.ONLINE
+                                        : ConsultationType.PHYSICAL,
+                                ClinicSchedule.MAX_APPOINTMENTS_PER_DAY,
+                                ClinicSchedule.MINUTES_PER_PATIENT,
+                                FEES[doctorIndex % FEES.length]
+                        )
+                );
             }
+
+            doctorIndex += 1;
         }
     }
 
-    /**
-     * Future, bookable slots. The two booking cut-offs (60 minutes for
-     * physical and 30 minutes for online) are respected because today's
-     * slot always starts at least 75 minutes from now.
-     */
-    private List<TimeSlot> slotsFor(LocalDate date, boolean isToday) {
-        List<TimeSlot> slots = new ArrayList<>();
-
-        if (!isToday) {
-            return clinicSlots();
-        }
-
-        LocalDateTime now = LocalDateTime.now(clock);
-
-        LocalDateTime start = now
-                .plusMinutes(75)
-                .truncatedTo(ChronoUnit.MINUTES);
-
-        int minute = start.getMinute();
-        int rounded = ((minute + 14) / 15) * 15;
-
-        if (rounded == 60) {
-            start = start.plusHours(1)
-                    .withMinute(0)
-                    .withSecond(0)
-                    .withNano(0);
-        } else {
-            start = start.withMinute(rounded)
-                    .withSecond(0)
-                    .withNano(0);
-        }
-
-        LocalDateTime end = start.plusMinutes(110);
-
-        slots.addAll(clinicSlots());
-
-        LocalTime startTime = start.toLocalTime();
-        LocalTime endTime = end.toLocalTime();
-        if (startTime.isBefore(ClinicSchedule.START_TIME)) {
-            startTime = ClinicSchedule.START_TIME;
-        }
-        if (end.toLocalDate().isAfter(date)
-                || endTime.isAfter(ClinicSchedule.END_TIME)) {
-            endTime = ClinicSchedule.END_TIME;
-        }
-
-        if (!start.toLocalDate().isAfter(date)
-                && startTime.isBefore(endTime)) {
-            long availableMinutes = java.time.Duration
-                    .between(startTime, endTime)
-                    .toMinutes();
-            int maxAppointments = (int) (availableMinutes
-                    / ClinicSchedule.MINUTES_PER_PATIENT);
-
-            if (maxAppointments > 0) {
-                slots.add(new TimeSlot(
-                        startTime,
-                        endTime,
-                        maxAppointments,
-                        ClinicSchedule.MINUTES_PER_PATIENT
-                ));
-            }
-        }
-
-        // Today's fixed slots may already be in the past; the booking
-        // validation rejects them, so drop any that cannot be booked.
-        LocalDateTime earliestBookable = now.plusMinutes(75);
-        slots.removeIf(slot -> date.atTime(slot.start())
-                .isBefore(earliestBookable));
-
-        return slots;
-    }
-
-    /**
-     * The published clinic day is split into three bookable blocks. Every
-     * block uses the advertised 10-minute patient slot so the guest roster,
-     * patient booking feed and live queue all agree.
-     */
-    private List<TimeSlot> clinicSlots() {
-        LocalTime start = ClinicSchedule.START_TIME;
-        List<TimeSlot> slots = new ArrayList<>();
-
-        for (int block = 0; block < 3; block += 1) {
-            LocalTime end = start.plusHours(3);
-            slots.add(new TimeSlot(
-                    start,
-                    end,
-                    16,
-                    ClinicSchedule.MINUTES_PER_PATIENT
-            ));
-            start = end;
-        }
-
-        return slots;
+    private boolean isRoomAvailable(Room room, LocalDate date) {
+        return doctorSessionRepository
+                .findByRoom_IdAndSessionDate(room.getId(), date)
+                .stream()
+                .noneMatch(session ->
+                        session.getStatus() != SessionStatus.CANCELLED
+                                && session.getStartTime()
+                                        .isBefore(ClinicSchedule.END_TIME)
+                                && session.getEndTime()
+                                        .isAfter(ClinicSchedule.START_TIME)
+                );
     }
 
     private String emailFor(String firstName, String lastName) {
@@ -757,13 +675,5 @@ public class DemoDataSeeder implements ApplicationRunner {
                 .toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9.]", "")
                 + "@" + EMAIL_DOMAIN;
-    }
-
-    private record TimeSlot(
-            LocalTime start,
-            LocalTime end,
-            int maxAppointments,
-            int minutesPerPatient
-    ) {
     }
 }

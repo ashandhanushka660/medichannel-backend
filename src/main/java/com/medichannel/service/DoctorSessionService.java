@@ -34,6 +34,7 @@ import com.medichannel.repository.DoctorRepository;
 import com.medichannel.repository.DoctorSessionRepository;
 import com.medichannel.repository.RoomRepository;
 import com.medichannel.repository.UserRepository;
+import com.medichannel.security.PatientDataProtectionService;
 
 @Service
 public class DoctorSessionService {
@@ -47,6 +48,7 @@ public class DoctorSessionService {
     private final NotificationService notificationService;
     private final Clock clock;
     private final UserRepository userRepository;
+    private final PatientDataProtectionService dataProtectionService;
 
     public DoctorSessionService(
             DoctorSessionRepository doctorSessionRepository,
@@ -57,7 +59,8 @@ public class DoctorSessionService {
             AuditLogService auditLogService,
             NotificationService notificationService,
             Clock clock,
-            UserRepository userRepository
+            UserRepository userRepository,
+            PatientDataProtectionService dataProtectionService
     ) {
         this.doctorSessionRepository = doctorSessionRepository;
         this.doctorRepository = doctorRepository;
@@ -68,6 +71,7 @@ public class DoctorSessionService {
         this.notificationService = notificationService;
         this.clock = clock;
         this.userRepository = userRepository;
+        this.dataProtectionService = dataProtectionService;
     }
 
     // Audit identity comes from the validated token subject, not the email
@@ -289,13 +293,24 @@ public class DoctorSessionService {
     public DoctorSessionResponse cancelSession(
             UUID sessionId,
             UUID actorUserId,
-            String actorRole
+            String actorRole,
+            String reason
     ) {
         DoctorSession session = requireActorCanManage(
                 sessionId,
                 actorUserId,
                 actorRole
         );
+        String trimmedReason = reason == null ? "" : reason.trim();
+        if (trimmedReason.isBlank()) {
+            throw new IllegalArgumentException(
+                    "A cancellation reason is required."
+            );
+        }
+        if (trimmedReason.length() > 500) {
+            trimmedReason = trimmedReason.substring(0, 500);
+        }
+        String encryptedReason = dataProtectionService.encrypt(trimmedReason);
         applyTransition(() -> session.cancel());
 
         // BR-11/3.3: cancelling a session cancels every appointment in
@@ -309,7 +324,7 @@ public class DoctorSessionService {
             if (appointment.getStatus() == AppointmentStatus.BOOKED
                     || appointment.getStatus() == AppointmentStatus.ARRIVED
                     || appointment.getStatus() == AppointmentStatus.IN_CONSULTATION) {
-                appointment.cancelByStaff(clock.instant());
+                appointment.cancelByStaff(clock.instant(), encryptedReason);
                 appointmentRepository.save(appointment);
                 cancelledAppointments++;
 
@@ -450,7 +465,12 @@ public class DoctorSessionService {
                 ClinicSchedule.END_TIME,
                 ClinicSchedule.MINUTES_PER_PATIENT,
                 periodStart,
-                periodEnd
+                periodEnd,
+                List.of(
+                        AppointmentStatus.BOOKED,
+                        AppointmentStatus.ARRIVED,
+                        AppointmentStatus.IN_CONSULTATION
+                )
         ).stream().map(this::toResponse).toList();
     }
 
@@ -541,12 +561,25 @@ public class DoctorSessionService {
             );
         }
 
-        LocalDateTime sessionStart = LocalDateTime.of(
+        if (!request.startTime().equals(ClinicSchedule.START_TIME)
+                || !request.endTime().equals(ClinicSchedule.END_TIME)) {
+            throw new IllegalArgumentException(
+                    "Sessions must cover the published clinic day, 07:00–16:00."
+            );
+        }
+
+        if (request.minutesPerPatient() != ClinicSchedule.MINUTES_PER_PATIENT) {
+            throw new IllegalArgumentException(
+                    "Each patient must be allocated exactly 10 minutes."
+            );
+        }
+
+        LocalDateTime sessionEnd = LocalDateTime.of(
                 request.sessionDate(),
-                request.startTime()
+                request.endTime()
         );
 
-        if (sessionStart.isBefore(LocalDateTime.now(clock))) {
+        if (sessionEnd.isBefore(LocalDateTime.now(clock))) {
             throw new IllegalArgumentException(
                     "A session cannot be scheduled in the past."
             );

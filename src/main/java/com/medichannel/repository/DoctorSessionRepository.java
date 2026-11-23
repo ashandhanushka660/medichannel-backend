@@ -2,6 +2,7 @@ package com.medichannel.repository;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -11,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.medichannel.entity.DoctorSession;
+import com.medichannel.enums.AppointmentStatus;
 import com.medichannel.enums.ConsultationType;
 import com.medichannel.enums.SessionStatus;
 
@@ -29,6 +31,8 @@ public interface DoctorSessionRepository
     );
 
     List<DoctorSession> findByDoctor_Id(UUID doctorId);
+
+    List<DoctorSession> findByRoom_IdAndSessionDate(UUID roomId, LocalDate date);
 
     List<DoctorSession>
             findByDoctor_IdAndSessionDateGreaterThanEqualOrderBySessionDateAscStartTimeAsc(
@@ -92,7 +96,10 @@ public interface DoctorSessionRepository
                         )
                     )
               )
-              AND s.lastAppointmentNumber < s.maxAppointments
+              AND (SELECT COUNT(a) FROM Appointment a
+                   WHERE a.session.id = s.id
+                     AND a.status IN :activeStatuses)
+                  < s.maxAppointments
               AND s.startTime >= :clinicStart
               AND s.endTime <= :clinicEnd
               AND s.minutesPerPatient = :slotMinutes
@@ -128,6 +135,7 @@ public interface DoctorSessionRepository
             @Param("clinicEnd") LocalTime clinicEnd,
             @Param("slotMinutes") int slotMinutes,
             @Param("periodStart") LocalTime periodStart,
-            @Param("periodEnd") LocalTime periodEnd
+            @Param("periodEnd") LocalTime periodEnd,
+            @Param("activeStatuses") Collection<AppointmentStatus> activeStatuses
     );
 }

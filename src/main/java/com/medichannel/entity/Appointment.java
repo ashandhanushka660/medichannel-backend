@@ -129,6 +129,9 @@ public class Appointment {
     @Column(name = "cancelled_at")
     private Instant cancelledAt;
 
+    @Column(name = "delay_minutes", nullable = false)
+    private int delayMinutes;
+
     @Column(name = "cancellation_reason_encrypted", columnDefinition = "TEXT")
     private String cancellationReasonEncrypted;
 
@@ -282,15 +285,36 @@ public class Appointment {
         this.doctorAcceptedAt = time;
     }
 
-    public void declineByDoctor(Instant time) {
+    public void declineByDoctor(
+        Instant time,
+        String encryptedCancellationReason
+    ) {
         if (status == AppointmentStatus.COMPLETED) {
             throw new IllegalStateException("Completed appointments cannot be declined.");
+        }
+        if (time == null) {
+            throw new IllegalArgumentException("Cancellation time is required.");
+        }
+        if (encryptedCancellationReason == null
+                || encryptedCancellationReason.isBlank()) {
+            throw new IllegalArgumentException("Cancellation reason is required.");
         }
         this.acceptanceStatus = "DECLINED";
         this.status = AppointmentStatus.CANCELLED;
         this.cancelledAt = time;
         this.cancellationReasonEncrypted =
-                STAFF_CANCELLATION_PREFIX + "Doctor declined appointment";
+                STAFF_CANCELLATION_PREFIX + encryptedCancellationReason;
+    }
+
+    public void addDelay(int minutes) {
+        if (minutes < 0) {
+            throw new IllegalArgumentException("Delay cannot be negative.");
+        }
+        this.delayMinutes += minutes;
+    }
+
+    public int getDelayMinutes() {
+        return delayMinutes;
     }
 
     public String getAcceptanceStatus() {

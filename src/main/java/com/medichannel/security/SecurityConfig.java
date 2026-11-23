@@ -167,6 +167,10 @@ public class SecurityConfig {
                         ).hasAnyRole("CUSTOMER", "MANAGER", "ADMIN")
                         .requestMatchers(
                                 HttpMethod.PATCH,
+                                "/api/v1/appointments/*/delay"
+                        ).hasAnyRole("MANAGER", "ADMIN", "DOCTOR")
+                        .requestMatchers(
+                                HttpMethod.PATCH,
                                 "/api/v1/appointments/*/check-in"
                         ).hasRole("CUSTOMER")
                         .requestMatchers(

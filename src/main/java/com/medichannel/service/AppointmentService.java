@@ -453,13 +453,16 @@ public class AppointmentService {
                 throw new ConflictException("Completed appointments cannot be cancelled.");
             }
 
-            String encryptedReason = null;
-            if (reason != null && !reason.trim().isBlank()) {
-                String trimmed = reason.trim();
-                encryptedReason = dataProtectionService.encrypt(
-                        trimmed.length() > 500 ? trimmed.substring(0, 500) : trimmed
+            String trimmedReason = reason == null ? "" : reason.trim();
+            if (trimmedReason.isBlank()) {
+                throw new IllegalArgumentException(
+                        "A cancellation reason is required."
                 );
             }
+            if (trimmedReason.length() > 500) {
+                trimmedReason = trimmedReason.substring(0, 500);
+            }
+            String encryptedReason = dataProtectionService.encrypt(trimmedReason);
             appointment.cancelByStaff(clock.instant(), encryptedReason);
             Appointment saved = appointmentRepository.saveAndFlush(appointment);
 
@@ -627,14 +630,28 @@ public class AppointmentService {
     @Transactional
     public DoctorAppointmentResponse declineAppointmentByDoctor(
             UUID doctorUserId,
-            UUID appointmentId
+            UUID appointmentId,
+            String reason
     ) {
         Appointment appointment = findDoctorAppointment(
                 doctorUserId,
                 appointmentId
         );
 
-        appointment.declineByDoctor(clock.instant());
+        String trimmedReason = reason == null ? "" : reason.trim();
+        if (trimmedReason.isBlank()) {
+            throw new IllegalArgumentException(
+                    "A cancellation reason is required."
+            );
+        }
+        if (trimmedReason.length() > 500) {
+            trimmedReason = trimmedReason.substring(0, 500);
+        }
+
+        appointment.declineByDoctor(
+                clock.instant(),
+                dataProtectionService.encrypt(trimmedReason)
+        );
         Appointment saved = appointmentRepository.saveAndFlush(appointment);
 
         String when = appointment.getSession().getSessionDate()
@@ -651,6 +668,85 @@ public class AppointmentService {
         publishQueue(saved);
 
         return toDoctorResponse(saved);
+    }
+
+    /**
+     * Delays one appointment and every active appointment behind it in the
+     * same session. Earlier patients are unaffected; a later cancellation
+     * cannot remove the delay that has already been applied to the people
+     * still waiting.
+     */
+    @Transactional
+    public AppointmentResponse delayAppointmentQueue(
+            UUID userId,
+            String role,
+            UUID appointmentId,
+            int minutes
+    ) {
+        if (minutes < 0) {
+            throw new IllegalArgumentException("Delay cannot be negative.");
+        }
+
+        Appointment target;
+        if ("DOCTOR".equalsIgnoreCase(role)) {
+            target = findDoctorAppointment(userId, appointmentId);
+        } else if ("ADMIN".equalsIgnoreCase(role)
+                || "MANAGER".equalsIgnoreCase(role)) {
+            target = appointmentRepository.findById(appointmentId)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Appointment was not found."
+                    ));
+        } else {
+            throw new ForbiddenOperationException(
+                    "Only hospital staff or the assigned doctor can delay a queue."
+            );
+        }
+
+        if (target.getAppointmentNumber() == null
+                || !ACTIVE_STATUSES.contains(target.getStatus())) {
+            throw new ConflictException(
+                    "Only an active queued appointment can be delayed."
+            );
+        }
+
+        List<Appointment> affected = appointmentRepository
+                .findBySession_IdAndAppointmentNumberGreaterThanEqualAndStatusInOrderByAppointmentNumberAsc(
+                        target.getSession().getId(),
+                        target.getAppointmentNumber(),
+                        ACTIVE_STATUSES
+                );
+
+        for (Appointment appointment : affected) {
+            appointment.addDelay(minutes);
+            appointmentRepository.save(appointment);
+
+            notificationService.create(
+                    appointment.getPatient().getUser().getId(),
+                    NotificationType.APPOINTMENT_REMINDER,
+                    "Queue delayed",
+                    "Appointment #" + appointment.getAppointmentNumber()
+                            + " has been delayed by " + minutes
+                            + " minute(s). Your new estimated time is "
+                            + estimatedConsultationTime(appointment) + ".",
+                    appointment.getId()
+            );
+        }
+
+        appointmentRepository.flush();
+        publishQueue(target);
+        auditLogService.log(
+                userId,
+                role,
+                "QUEUE_DELAY_APPLIED",
+                "Appointment #" + target.getAppointmentNumber()
+                        + " delayed by " + minutes
+                        + " minute(s); " + affected.size()
+                        + " queued appointment(s) affected.",
+                "10.0.4.18",
+                target.getId()
+        );
+
+        return toResponse(target);
     }
 
     @Transactional
@@ -1317,13 +1413,22 @@ public class AppointmentService {
     ) {
         DoctorSession session = appointment.getSession();
 
+        int position = appointment.getAppointmentNumber() == null
+                ? 1
+                : (int) Math.max(1, appointmentRepository.countActiveUpToNumber(
+                        session.getId(),
+                        appointment.getAppointmentNumber(),
+                        ACTIVE_STATUSES
+                ));
+
         return LocalDateTime.of(
                 session.getSessionDate(),
                 session.getStartTime()
         ).plusMinutes(
-                (long) (appointment.getAppointmentNumber() - 1)
+                (long) (position - 1)
                         * session.getMinutesPerPatient()
                         + session.getDelayMinutes()
+                        + appointment.getDelayMinutes()
         );
     }
 

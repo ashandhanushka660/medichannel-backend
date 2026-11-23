@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 import com.medichannel.dto.session.DoctorSessionRequest;
 import com.medichannel.dto.session.DoctorSessionResponse;
+import com.medichannel.dto.session.SessionCancellationRequest;
 import com.medichannel.dto.session.SessionDelayRequest;
 import com.medichannel.enums.ConsultationType;
 import com.medichannel.service.DoctorSessionService;
@@ -128,13 +129,15 @@ public class DoctorSessionController {
     @PatchMapping("/{sessionId}/cancel")
     public ResponseEntity<DoctorSessionResponse> cancelSession(
             @AuthenticationPrincipal Jwt jwt,
-            @PathVariable UUID sessionId
+            @PathVariable UUID sessionId,
+            @Valid @RequestBody SessionCancellationRequest request
     ) {
         return ResponseEntity.ok(
                 doctorSessionService.cancelSession(
                         sessionId,
                         UUID.fromString(jwt.getSubject()),
-                        jwt.getClaimAsString("role")
+                        jwt.getClaimAsString("role"),
+                        request.reason()
                 )
         );
     }

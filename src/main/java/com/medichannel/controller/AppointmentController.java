@@ -13,6 +13,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import com.medichannel.dto.appointment.AppointmentBookingRequest;
+import com.medichannel.dto.appointment.AppointmentDelayRequest;
 import com.medichannel.dto.appointment.AppointmentResponse;
 import com.medichannel.dto.appointment.CancelAppointmentRequest;
 import com.medichannel.service.AppointmentService;
@@ -86,6 +87,22 @@ public class AppointmentController {
                         role,
                         appointmentId,
                         reason
+                )
+        );
+    }
+
+    @PatchMapping("/{appointmentId}/delay")
+    public ResponseEntity<AppointmentResponse> delayAppointment(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID appointmentId,
+            @Valid @RequestBody AppointmentDelayRequest request
+    ) {
+        return ResponseEntity.ok(
+                appointmentService.delayAppointmentQueue(
+                        UUID.fromString(jwt.getSubject()),
+                        jwt.getClaimAsString("role"),
+                        appointmentId,
+                        request.delayMinutes()
                 )
         );
     }
