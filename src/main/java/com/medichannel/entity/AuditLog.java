@@ -11,6 +11,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
+/**
+ * Append-only audit event.
+ *
+ * Actors are identified by {@code user_id}; plaintext email addresses are
+ * never stored here. Database triggers installed by V19 reject any update or
+ * deletion of an audit row.
+ */
 @Entity
 @Table(name = "audit_logs")
 public class AuditLog {
@@ -22,30 +29,51 @@ public class AuditLog {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
-    @Column(name = "user_email", length = 255)
-    private String userEmail;
+    @Column(name = "user_id", updatable = false)
+    private UUID userId;
 
-    @Column(name = "user_role", length = 50)
+    @Column(name = "appointment_id", updatable = false)
+    private UUID appointmentId;
+
+    @Column(name = "user_role", length = 50, updatable = false)
     private String userRole;
 
-    @Column(name = "action", nullable = false, length = 255)
+    @Column(name = "action", nullable = false, length = 255, updatable = false)
     private String action;
 
-    @Column(name = "details", columnDefinition = "TEXT")
+    @Column(name = "details", columnDefinition = "TEXT", updatable = false)
     private String details;
 
-    @Column(name = "ip_address", length = 100)
+    @Column(name = "ip_address", length = 100, updatable = false)
     private String ipAddress;
 
     public AuditLog() {
     }
 
-    public AuditLog(String userEmail, String userRole, String action, String details, String ipAddress) {
-        this.userEmail = userEmail;
+    public AuditLog(
+            UUID userId,
+            String userRole,
+            String action,
+            String details,
+            String ipAddress
+    ) {
+        this(userId, userRole, action, details, ipAddress, null);
+    }
+
+    public AuditLog(
+            UUID userId,
+            String userRole,
+            String action,
+            String details,
+            String ipAddress,
+            UUID appointmentId
+    ) {
+        this.userId = userId;
         this.userRole = userRole;
         this.action = action;
         this.details = details;
-        this.ipAddress = ipAddress != null ? ipAddress : "127.0.0.1";
+        this.ipAddress = ipAddress;
+        this.appointmentId = appointmentId;
     }
 
     @PrePersist
@@ -53,8 +81,8 @@ public class AuditLog {
         if (createdAt == null) {
             createdAt = Instant.now();
         }
-        if (ipAddress == null) {
-            ipAddress = "127.0.0.1";
+        if (ipAddress == null || ipAddress.isBlank()) {
+            ipAddress = "unknown";
         }
     }
 
@@ -66,47 +94,27 @@ public class AuditLog {
         return createdAt;
     }
 
-    public void setCreatedAt(Instant createdAt) {
-        this.createdAt = createdAt;
+    public UUID getUserId() {
+        return userId;
     }
 
-    public String getUserEmail() {
-        return userEmail;
-    }
-
-    public void setUserEmail(String userEmail) {
-        this.userEmail = userEmail;
+    public UUID getAppointmentId() {
+        return appointmentId;
     }
 
     public String getUserRole() {
         return userRole;
     }
 
-    public void setUserRole(String userRole) {
-        this.userRole = userRole;
-    }
-
     public String getAction() {
         return action;
-    }
-
-    public void setAction(String action) {
-        this.action = action;
     }
 
     public String getDetails() {
         return details;
     }
 
-    public void setDetails(String details) {
-        this.details = details;
-    }
-
     public String getIpAddress() {
         return ipAddress;
-    }
-
-    public void setIpAddress(String ipAddress) {
-        this.ipAddress = ipAddress;
     }
 }

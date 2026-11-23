@@ -47,6 +47,7 @@ public class ChatService {
     private final PatientDataProtectionService dataProtectionService;
     private final AppointmentAccessPolicy accessPolicy;
     private final NotificationService notificationService;
+    private final AuditLogService auditLogService;
     private final Clock clock;
 
     public ChatService(
@@ -58,6 +59,7 @@ public class ChatService {
             PatientDataProtectionService dataProtectionService,
             AppointmentAccessPolicy accessPolicy,
             NotificationService notificationService,
+            AuditLogService auditLogService,
             Clock clock
     ) {
         this.chatMessageRepository = chatMessageRepository;
@@ -68,6 +70,7 @@ public class ChatService {
         this.dataProtectionService = dataProtectionService;
         this.accessPolicy = accessPolicy;
         this.notificationService = notificationService;
+        this.auditLogService = auditLogService;
         this.clock = clock;
     }
 
@@ -144,7 +147,8 @@ public class ChatService {
         );
     }
 
-    @Transactional(readOnly = true)
+    // Read-write transaction so the history-view audit event is committed.
+    @Transactional
     public List<ChatMessageResponse> getHistory(
             UUID appointmentId,
             UUID userId,
@@ -156,6 +160,15 @@ public class ChatService {
                 ));
 
         accessPolicy.requireChatParticipant(appointment, userId);
+
+        // BR-09: chat history is part of the consultation room and must not
+        // be readable while the consultation is still locked or after it has
+        // been closed by a role that never opened the room.
+        if (appointment.getStatus() != AppointmentStatus.IN_CONSULTATION) {
+            throw new ForbiddenOperationException(
+                    "Consultation chat is available only during an active consultation."
+            );
+        }
 
         int effectiveLimit = normalizeLimit(limit);
 
@@ -171,6 +184,15 @@ public class ChatService {
         );
 
         Collections.reverse(messages);
+
+        // Authorization succeeded and the conversation was read. Audit only
+        // identifiers, time and IP - never message content.
+        auditLogService.logConsultationView(
+                userId,
+                "CHAT_HISTORY_VIEWED",
+                appointmentId,
+                null
+        );
 
         Map<UUID, String> displayNames = new HashMap<>();
 

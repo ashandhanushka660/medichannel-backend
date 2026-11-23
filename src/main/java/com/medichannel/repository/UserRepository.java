@@ -12,12 +12,28 @@ import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
 
 import com.medichannel.entity.User;
+import com.medichannel.security.DataProtectionService;
 
 public interface UserRepository extends JpaRepository<User, UUID> {
 
-    Optional<User> findByEmail(String email);
+    /**
+     * All email equality lookups go through the HMAC lookup column. The
+     * public methods keep accepting the plaintext address so existing
+     * callers do not need to know about the encryption envelope.
+     */
+    default Optional<User> findByEmail(String email) {
+        return findByEmailLookupHash(DataProtectionService.lookupHashFor(email));
+    }
 
-    boolean existsByEmail(String email);
+    default boolean existsByEmail(String email) {
+        return existsByEmailLookupHash(
+                DataProtectionService.lookupHashFor(email)
+        );
+    }
+
+    Optional<User> findByEmailLookupHash(@Param("emailLookupHash") String emailLookupHash);
+
+    boolean existsByEmailLookupHash(@Param("emailLookupHash") String emailLookupHash);
 
     List<User> findAllByOrderByCreatedAtDesc();
 
@@ -30,11 +46,17 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             SELECT u
             FROM User u
             JOIN FETCH u.role
-            WHERE u.email = :email
+            WHERE u.emailLookupHash = :emailLookupHash
             """)
-    Optional<User> findByEmailForAuthentication(
-            @Param("email") String email
+    Optional<User> findByEmailLookupHashForAuthentication(
+            @Param("emailLookupHash") String emailLookupHash
     );
+
+    default Optional<User> findByEmailForAuthentication(String email) {
+        return findByEmailLookupHashForAuthentication(
+                DataProtectionService.lookupHashFor(email)
+        );
+    }
 
     @Query("""
             SELECT u

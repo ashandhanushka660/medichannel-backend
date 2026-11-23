@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,6 +64,9 @@ public class AdminService {
     private final PatientDataProtectionService dataProtectionService;
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
+
+    @Autowired(required = false)
+    private ApplicationEventPublisher eventPublisher;
 
     public AdminService(
             UserRepository userRepository,
@@ -494,8 +499,17 @@ public class AdminService {
         );
         user.unlock();
         user.incrementTokenVersion();
+        // The new password is a temporary credential: no access token is
+        // issued until the account owner completes /auth/change-password.
+        user.requirePasswordChange();
 
         User saved = userRepository.saveAndFlush(user);
+
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(
+                    new AuthService.WebSocketSessionRevokedEvent(user.getId())
+            );
+        }
 
         auditLogService.log(
                 actingAdminId == null ? "system" : findUser(actingAdminId).getEmail(),

@@ -73,11 +73,11 @@ public class AppointmentController {
     public ResponseEntity<AppointmentResponse> cancelAppointment(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID appointmentId,
-            @Valid @RequestBody(required = false) CancelAppointmentRequest request
+            @Valid @RequestBody CancelAppointmentRequest request
     ) {
         UUID userId = UUID.fromString(jwt.getSubject());
         String role = jwt.getClaimAsString("role");
-        String reason = request == null ? null : request.reason();
+        String reason = request.reason();
 
         return ResponseEntity.ok(
                 appointmentService.cancelAppointment(

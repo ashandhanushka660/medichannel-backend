@@ -7,6 +7,7 @@ import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
 import com.medichannel.enums.AppointmentStatus;
+import com.medichannel.enums.ConsultationType;
 import com.medichannel.enums.PaymentMethod;
 import com.medichannel.enums.PaymentStatus;
 
@@ -41,6 +42,15 @@ import jakarta.persistence.UniqueConstraint;
     }
 )
 public class Appointment {
+
+    /**
+     * Staff/system cancellations are legitimate even for paid or
+     * in-consultation appointments (for example when a session is
+     * cancelled). The database trigger recognises these markers; every
+     * other cancellation must satisfy the patient booking rule.
+     */
+    public static final String STAFF_CANCELLATION_PREFIX = "STAFF:";
+    public static final String SYSTEM_CANCELLATION_PREFIX = "SYSTEM:";
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -186,12 +196,14 @@ public class Appointment {
 
         this.status = AppointmentStatus.CANCELLED;
         this.cancelledAt = cancellationTime;
+        this.cancellationReasonEncrypted =
+                STAFF_CANCELLATION_PREFIX + "CANCELLED";
     }
 
     /**
-     * Patient-initiated cancellation for the demo workflow. Patients may
-     * cancel any of their own appointments, regardless of payment status or
-     * how close the session is, and must supply a reason.
+     * Patient-initiated cancellation. Only an unpaid booking may be
+     * cancelled by the patient; the service additionally enforces the
+     * three-hour cut-off using the application clock.
      */
     public void cancelForPatient(
         Instant cancellationTime,
@@ -199,6 +211,16 @@ public class Appointment {
     ) {
         if (status == AppointmentStatus.CANCELLED) {
             throw new IllegalStateException("Appointment is already cancelled.");
+        }
+        if (status != AppointmentStatus.BOOKED) {
+            throw new IllegalStateException(
+                    "Only booked appointments can be cancelled."
+            );
+        }
+        if (paymentStatus != PaymentStatus.PENDING) {
+            throw new IllegalStateException(
+                    "Paid appointments cannot be cancelled by patients."
+            );
         }
         if (cancellationTime == null) {
             throw new IllegalArgumentException("Cancellation time is required.");
@@ -234,10 +256,10 @@ public class Appointment {
         }
         this.status = AppointmentStatus.CANCELLED;
         this.cancelledAt = cancellationTime;
-        if (encryptedCancellationReason != null
-                && !encryptedCancellationReason.isBlank()) {
-            this.cancellationReasonEncrypted = encryptedCancellationReason;
-        }
+        this.cancellationReasonEncrypted = encryptedCancellationReason == null
+                || encryptedCancellationReason.isBlank()
+                ? SYSTEM_CANCELLATION_PREFIX + "Cancelled by hospital staff"
+                : STAFF_CANCELLATION_PREFIX + encryptedCancellationReason;
     }
 
     public void acceptByDoctor(Instant time) {
@@ -255,6 +277,8 @@ public class Appointment {
         this.acceptanceStatus = "DECLINED";
         this.status = AppointmentStatus.CANCELLED;
         this.cancelledAt = time;
+        this.cancellationReasonEncrypted =
+                STAFF_CANCELLATION_PREFIX + "Doctor declined appointment";
     }
 
     public String getAcceptanceStatus() {
@@ -313,6 +337,14 @@ public class Appointment {
             );
         }
 
+        if (session != null
+                && session.getConsultationType() == ConsultationType.PHYSICAL
+                && status != AppointmentStatus.ARRIVED) {
+            throw new IllegalStateException(
+                "Physical consultations require patient check-in before they can start."
+            );
+        }
+
         if (startTime == null) {
             throw new IllegalArgumentException(
                 "Consultation start time is required."
@@ -320,7 +352,7 @@ public class Appointment {
         }
 
         if (status == AppointmentStatus.BOOKED) {
-            // The doctor may start without a separate check-in step.
+            // Online consultations may start without a separate check-in step.
             this.arrivedAt = startTime;
         }
 

@@ -306,9 +306,7 @@ public class AppointmentService {
         return toResponse(appointment);
     }
 
-    // PATCH: Cancel any appointment belonging to the signed-in patient.
-    // Demo rule: patients may cancel their own appointment at any time,
-    // including paid and completed bookings. A reason is required.
+    // PATCH: Cancel an unpaid booking belonging to the signed-in patient.
     @Transactional
     public AppointmentResponse cancelMyAppointment(
             UUID userId,
@@ -329,9 +327,41 @@ public class AppointmentService {
             );
         }
 
+        if (appointment.getStatus() != AppointmentStatus.BOOKED) {
+            throw new ConflictException(
+                    "Only booked appointments can be cancelled by patients."
+            );
+        }
+
+        if (appointment.getPaymentStatus() != PaymentStatus.PENDING) {
+            throw new ConflictException(
+                    "Paid appointments cannot be cancelled by patients. "
+                    + "Please contact the hospital staff."
+            );
+        }
+
+        DoctorSession session = appointment.getSession();
+        LocalDateTime sessionStart = LocalDateTime.of(
+                session.getSessionDate(),
+                session.getStartTime()
+        );
+        LocalDateTime cancellationDeadline = sessionStart.minusHours(3);
+        LocalDateTime now = LocalDateTime.now(
+                clock.withZone(TimeConfiguration.APPLICATION_ZONE)
+        );
+
+        if (now.isAfter(cancellationDeadline)) {
+            throw new ConflictException(
+                    "Appointments can only be cancelled at least three hours "
+                    + "before the session starts."
+            );
+        }
+
         String trimmedReason = reason == null ? "" : reason.trim();
         if (trimmedReason.isBlank()) {
-            trimmedReason = "No reason provided";
+            throw new IllegalArgumentException(
+                    "A cancellation reason is required."
+            );
         }
         if (trimmedReason.length() > 500) {
             trimmedReason = trimmedReason.substring(0, 500);
@@ -638,7 +668,18 @@ public class AppointmentService {
 
         ensureSessionAcceptsConsultation(appointment);
 
-        if (appointment.getStatus() != AppointmentStatus.BOOKED
+        boolean physical = appointment.getSession().getConsultationType()
+                == ConsultationType.PHYSICAL;
+
+        if (physical
+                && appointment.getStatus() != AppointmentStatus.ARRIVED) {
+            throw new ConflictException(
+                    "Physical consultations require patient check-in before they can start."
+            );
+        }
+
+        if (!physical
+                && appointment.getStatus() != AppointmentStatus.BOOKED
                 && appointment.getStatus() != AppointmentStatus.ARRIVED) {
             throw new ConflictException(
                     "The consultation cannot be started from its current status."
@@ -831,11 +872,14 @@ public class AppointmentService {
                             clock.instant()
                     );
 
+                    // RT-04: being called is distinct from the
+                    // CONSULTATION_STARTED notification sent by the
+                    // explicit start endpoint.
                     notificationService.create(
                             started.getPatient().getUser().getId(),
-                            NotificationType.CONSULTATION_STARTED,
+                            NotificationType.CALLED,
                             "You are next",
-                            "Your consultation has started.",
+                            "You have been called. Please proceed to the consultation room.",
                             started.getId()
                     );
 
@@ -869,6 +913,7 @@ public class AppointmentService {
                 summary.nowServing(),
                 summary.nextNumber(),
                 summary.remainingAppointments(),
+                summary.availableSlots(),
                 summary.maxAppointments(),
                 summary.status(),
                 appointments
@@ -891,10 +936,11 @@ public class AppointmentService {
     }
 
     /**
-     * RT-04: notify the patient who is exactly three places behind the
-     * number currently being served. The persisted notification is the
-     * de-duplication marker, so a page reload or a repeated queue
-     * broadcast never produces the same alert twice.
+     * RT-04: notify the patient who is three active places behind the
+     * number currently being served. Cancelled and no-show numbers leave
+     * gaps, so the third appointment is selected by ordering the active
+     * queue (LIMIT 1 OFFSET 2) rather than by arithmetic. The persisted
+     * notification is the de-duplication marker.
      */
     private void notifyThreeNumbersAway(
             DoctorSession session,
@@ -904,13 +950,11 @@ public class AppointmentService {
             return;
         }
 
-        int targetNumber = nowServing + 3;
-
         appointmentRepository
-                .findBySession_IdOrderByAppointmentNumberAsc(session.getId())
-                .stream()
-                .filter(appointment -> appointment.getAppointmentNumber()
-                        == targetNumber)
+                .findThirdActiveAppointmentAfterNumber(
+                        session.getId(),
+                        nowServing
+                )
                 .filter(appointment -> appointment.getStatus()
                         == AppointmentStatus.BOOKED
                         || appointment.getStatus()
@@ -921,7 +965,6 @@ public class AppointmentService {
                                 NotificationType.APPOINTMENT_REMINDER,
                                 THREE_NUMBERS_AWAY_TITLE
                         ))
-                .findFirst()
                 .ifPresent(appointment -> notificationService.create(
                         appointment.getPatient().getUser().getId(),
                         NotificationType.APPOINTMENT_REMINDER,
@@ -1104,6 +1147,34 @@ public class AppointmentService {
         }
     }
 
+    /**
+     * Staff/system reasons carry an internal marker so the database can
+     * distinguish them from patient cancellations. Strip that marker
+     * before returning the reason to the patient.
+     */
+    private String decryptCancellationReason(String storedReason) {
+        if (storedReason == null) {
+            return null;
+        }
+
+        String value = storedReason;
+        if (value.startsWith(Appointment.STAFF_CANCELLATION_PREFIX)) {
+            value = value.substring(
+                    Appointment.STAFF_CANCELLATION_PREFIX.length()
+            );
+        } else if (value.startsWith(Appointment.SYSTEM_CANCELLATION_PREFIX)) {
+            value = value.substring(
+                    Appointment.SYSTEM_CANCELLATION_PREFIX.length()
+            );
+        }
+
+        if (!value.startsWith("v1:")) {
+            return value;
+        }
+
+        return dataProtectionService.decrypt(value);
+    }
+
     private AppointmentResponse toResponse(Appointment appointment) {
 
         DoctorSession session = appointment.getSession();
@@ -1135,11 +1206,9 @@ public class AppointmentService {
                 appointment.getCancelledAt(),
                 appointment.getAcceptanceStatus(),
                 appointment.getDoctorAcceptedAt(),
-                appointment.getCancellationReasonEncrypted() == null
-                        ? null
-                        : dataProtectionService.decrypt(
-                                appointment.getCancellationReasonEncrypted()
-                        )
+                decryptCancellationReason(
+                        appointment.getCancellationReasonEncrypted()
+                )
         );
     }
 

@@ -1,6 +1,5 @@
 package com.medichannel.config;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 import org.slf4j.Logger;
@@ -16,6 +15,7 @@ import com.medichannel.entity.Role;
 import com.medichannel.entity.User;
 import com.medichannel.repository.RoleRepository;
 import com.medichannel.repository.UserRepository;
+import com.medichannel.security.PasswordPolicy;
 
 /**
  * Optionally provisions the first administrator account.
@@ -29,9 +29,6 @@ public class AdminBootstrapRunner implements ApplicationRunner {
 
     private static final Logger logger =
             LoggerFactory.getLogger(AdminBootstrapRunner.class);
-
-    private static final int MINIMUM_PASSWORD_LENGTH = 8;
-    private static final int MAXIMUM_BCRYPT_PASSWORD_BYTES = 72;
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -70,15 +67,15 @@ public class AdminBootstrapRunner implements ApplicationRunner {
             return;
         }
 
-        int passwordBytes = adminPassword
-                .getBytes(StandardCharsets.UTF_8)
-                .length;
-
-        if (adminPassword.length() < MINIMUM_PASSWORD_LENGTH
-                || passwordBytes > MAXIMUM_BCRYPT_PASSWORD_BYTES) {
+        // Single source of truth for password strength (BR-10). This also
+        // enforces the BCrypt 72-byte ceiling.
+        try {
+            PasswordPolicy.validate(adminPassword);
+        } catch (IllegalArgumentException exception) {
             throw new IllegalStateException(
-                    "APP_ADMIN_PASSWORD must contain at least 8 characters "
-                    + "and must not exceed 72 UTF-8 bytes."
+                    "APP_ADMIN_PASSWORD does not satisfy the password policy: "
+                            + exception.getMessage(),
+                    exception
             );
         }
 

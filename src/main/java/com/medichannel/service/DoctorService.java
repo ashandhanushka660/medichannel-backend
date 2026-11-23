@@ -27,6 +27,7 @@ import com.medichannel.exception.ResourceNotFoundException;
 import com.medichannel.repository.AppointmentRepository;
 import com.medichannel.repository.DoctorRepository;
 import com.medichannel.repository.DoctorSessionRepository;
+import com.medichannel.repository.NotificationRepository;
 import com.medichannel.repository.ReviewRepository;
 import com.medichannel.repository.RoleRepository;
 import com.medichannel.repository.SpecialisationRepository;
@@ -48,6 +49,7 @@ public class DoctorService {
     private final AppointmentRepository appointmentRepository;
     private final DoctorSessionRepository doctorSessionRepository;
     private final ReviewRepository reviewRepository;
+    private final NotificationRepository notificationRepository;
 
     public DoctorService(
             DoctorRepository doctorRepository,
@@ -59,7 +61,8 @@ public class DoctorService {
             NotificationService notificationService,
             AppointmentRepository appointmentRepository,
             DoctorSessionRepository doctorSessionRepository,
-            ReviewRepository reviewRepository
+            ReviewRepository reviewRepository,
+            NotificationRepository notificationRepository
     ) {
         this.doctorRepository = doctorRepository;
         this.userRepository = userRepository;
@@ -71,6 +74,7 @@ public class DoctorService {
         this.appointmentRepository = appointmentRepository;
         this.doctorSessionRepository = doctorSessionRepository;
         this.reviewRepository = reviewRepository;
+        this.notificationRepository = notificationRepository;
     }
 
     /*
@@ -318,42 +322,57 @@ public class DoctorService {
         Doctor doctor = findDoctor(doctorId);
         User user = doctor.getUser();
 
-        boolean hasAppointments = appointmentRepository.existsBySession_Doctor_Id(doctorId);
-        if (hasAppointments) {
-            // Safe clinical retention: When patient appointments exist, disable the doctor
-            // and user account rather than breaking referential integrity.
+        /*
+         * BR-11: any clinical or operational history is retained. Reviews,
+         * sessions, notifications and appointments are never hard-deleted.
+         * The doctor is removed from the public directory by marking them
+         * inactive and disabling the linked account.
+         */
+        boolean hasAppointments =
+                appointmentRepository.existsBySession_Doctor_Id(doctorId);
+        boolean hasSessions =
+                !doctorSessionRepository.findByDoctor_Id(doctorId).isEmpty();
+        boolean hasReviews =
+                reviewRepository.countByDoctor_Id(doctorId) > 0;
+        boolean hasNotifications =
+                !notificationRepository
+                        .findByUser_IdOrderByCreatedAtDesc(user.getId())
+                        .isEmpty();
+
+        if (hasAppointments || hasSessions || hasReviews || hasNotifications) {
             doctor.updateAvailability(false);
             user.disable();
-            doctorRepository.save(doctor);
-            userRepository.save(user);
+            user.incrementTokenVersion();
+            doctorRepository.saveAndFlush(doctor);
+            userRepository.saveAndFlush(user);
+
             auditLogService.log(
                     "system",
                     "STAFF",
                     "Doctor deactivated",
-                    "Doctor " + doctor.getFirstName() + " " + doctor.getLastName() + " (SLMC " + doctor.getRegistrationNumber() + ") archived/disabled due to existing appointment records.",
+                    "Doctor " + doctor.getFirstName() + " " + doctor.getLastName()
+                            + " (SLMC " + doctor.getRegistrationNumber()
+                            + ") archived/disabled while retaining appointment, session, review and notification history.",
                     "0.0.0.0"
             );
             return;
         }
 
-        try {
-            reviewRepository.deleteByDoctor_Id(doctorId);
-        } catch (Exception ignored) {
-        }
-
-        try {
-            doctorSessionRepository.deleteByDoctor_Id(doctorId);
-        } catch (Exception ignored) {
-        }
-
-        doctorRepository.delete(doctor);
-        userRepository.delete(user);
+        // No history exists, so no protected rows can be lost. Even here
+        // the doctor profile is retained as an inactive record.
+        doctor.updateAvailability(false);
+        user.disable();
+        user.incrementTokenVersion();
+        doctorRepository.saveAndFlush(doctor);
+        userRepository.saveAndFlush(user);
 
         auditLogService.log(
                 "system",
                 "STAFF",
-                "Doctor deleted",
-                "Doctor " + doctor.getFirstName() + " " + doctor.getLastName() + " (SLMC " + doctor.getRegistrationNumber() + ") permanently removed.",
+                "Doctor deactivated",
+                "Doctor " + doctor.getFirstName() + " " + doctor.getLastName()
+                        + " (SLMC " + doctor.getRegistrationNumber()
+                        + ") deactivated; no history records required retention.",
                 "0.0.0.0"
         );
     }

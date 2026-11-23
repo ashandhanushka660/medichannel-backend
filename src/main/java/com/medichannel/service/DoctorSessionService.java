@@ -32,6 +32,7 @@ import com.medichannel.repository.AppointmentRepository;
 import com.medichannel.repository.DoctorRepository;
 import com.medichannel.repository.DoctorSessionRepository;
 import com.medichannel.repository.RoomRepository;
+import com.medichannel.repository.UserRepository;
 
 @Service
 public class DoctorSessionService {
@@ -44,6 +45,7 @@ public class DoctorSessionService {
     private final AuditLogService auditLogService;
     private final NotificationService notificationService;
     private final Clock clock;
+    private final UserRepository userRepository;
 
     public DoctorSessionService(
             DoctorSessionRepository doctorSessionRepository,
@@ -53,7 +55,8 @@ public class DoctorSessionService {
             SessionQueueService sessionQueueService,
             AuditLogService auditLogService,
             NotificationService notificationService,
-            Clock clock
+            Clock clock,
+            UserRepository userRepository
     ) {
         this.doctorSessionRepository = doctorSessionRepository;
         this.doctorRepository = doctorRepository;
@@ -63,20 +66,28 @@ public class DoctorSessionService {
         this.auditLogService = auditLogService;
         this.notificationService = notificationService;
         this.clock = clock;
+        this.userRepository = userRepository;
     }
 
+    // Audit identity comes from the validated token subject, not the email
+    // claim, which is no longer authoritative.
     private String getActorEmail() {
         try {
             var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
             if (auth != null) {
+                String subject = null;
+
                 if (auth.getPrincipal() instanceof org.springframework.security.oauth2.jwt.Jwt jwt) {
-                    String email = jwt.getClaimAsString("email");
-                    if (email != null && !email.isBlank()) {
-                        return email;
-                    }
+                    subject = jwt.getSubject();
+                } else if (auth.getName() != null && !auth.getName().isBlank()) {
+                    subject = auth.getName();
                 }
-                if (auth.getName() != null && !auth.getName().isBlank() && auth.getName().contains("@")) {
-                    return auth.getName();
+
+                if (subject != null) {
+                    UUID userId = UUID.fromString(subject);
+                    return userRepository.findById(userId)
+                            .map(user -> user.getEmail())
+                            .orElse(subject);
                 }
             }
         } catch (Exception ignored) {
@@ -620,7 +631,15 @@ public class DoctorSessionService {
                 Math.max(
                         0,
                         session.getMaxAppointments()
-                                - session.getLastAppointmentNumber()
+                                - (int) appointmentRepository
+                                        .countBySession_IdAndStatusIn(
+                                                session.getId(),
+                                                java.util.List.of(
+                                                        AppointmentStatus.BOOKED,
+                                                        AppointmentStatus.ARRIVED,
+                                                        AppointmentStatus.IN_CONSULTATION
+                                                )
+                                        )
                 ),
                 session.getMinutesPerPatient(),
                 session.getFeeLkr(),

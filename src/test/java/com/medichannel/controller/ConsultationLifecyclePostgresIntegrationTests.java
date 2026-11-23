@@ -288,6 +288,10 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 patch(APPOINTMENTS_URL + "/" + cancelledAppointmentId
                         + "/cancel")
                         .with(customerJwt(fixture.patientUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason": "No longer required"}
+                                """)
         )
                 .andExpect(status().isOk());
 
@@ -313,6 +317,7 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 fixture.sessionId(),
                 fixture.patientUserId()
         );
+        checkIn(completedAppointmentId, fixture.patientUserId());
         recordPayment(completedAppointmentId, fixture.patientUserId());
         startConsultation(completedAppointmentId, fixture.doctorUserId());
         completeConsultation(completedAppointmentId, fixture.doctorUserId());
@@ -469,6 +474,7 @@ class ConsultationLifecyclePostgresIntegrationTests {
         )
                 .andExpect(status().isConflict());
 
+        checkIn(bookedAppointmentId, fixture.patientUserId());
         recordPayment(bookedAppointmentId, fixture.patientUserId());
         startConsultation(bookedAppointmentId, fixture.doctorUserId());
         completeConsultation(bookedAppointmentId, fixture.doctorUserId());
@@ -552,33 +558,6 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 fixture.patientUserId()
         );
 
-        mockMvc.perform(
-                get(APPOINTMENTS_URL + "/" + appointmentId + "/chat/messages")
-                        .with(customerJwt(fixture.patientUserId()))
-        )
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(0));
-
-        mockMvc.perform(
-                get(APPOINTMENTS_URL + "/" + appointmentId + "/chat/messages")
-                        .with(doctorJwt(fixture.doctorUserId()))
-        )
-                .andExpect(status().isOk());
-
-        mockMvc.perform(
-                get(APPOINTMENTS_URL + "/" + appointmentId + "/chat/messages")
-                        .with(customerJwt(fixture.secondPatientUserId()))
-        )
-                .andExpect(status().isForbidden());
-
-        mockMvc.perform(
-                get(APPOINTMENTS_URL + "/" + appointmentId + "/chat/messages")
-                        .with(adminJwt(fixture.adminUserId()))
-        )
-                .andExpect(status().isForbidden());
-
-        // The WebSocket authorization service applies exactly the same
-        // participant rules as the HTTP chat history endpoint.
         Authentication patientAuth = authentication(
                 fixture.patientUserId(),
                 "ROLE_CUSTOMER"
@@ -596,6 +575,42 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 "ROLE_ADMIN"
         );
 
+        // BR-09: consultation chat/typing/subscriptions are unavailable
+        // until the appointment is actually in consultation, even for
+        // the patient owner and the assigned doctor.
+        assertThat(consultationAccessService.canAccess(
+                UUID.fromString(appointmentId),
+                patientAuth
+        )).isFalse();
+
+        assertThat(consultationAccessService.canAccess(
+                UUID.fromString(appointmentId),
+                doctorAuth
+        )).isFalse();
+
+        assertThat(consultationAccessService.canAccess(
+                UUID.fromString(appointmentId),
+                otherPatientAuth
+        )).isFalse();
+
+        assertThat(consultationAccessService.canAccess(
+                UUID.fromString(appointmentId),
+                adminAuth
+        )).isFalse();
+
+        // BR-09: the room is read-only until the consultation starts.
+        assertThatThrownBy(() -> chatService.sendMessage(
+                UUID.fromString(appointmentId),
+                fixture.patientUserId(),
+                "Too early"
+        )).isInstanceOf(ConflictException.class);
+
+        checkIn(appointmentId, fixture.patientUserId());
+        recordPayment(appointmentId, fixture.patientUserId());
+        startConsultation(appointmentId, fixture.doctorUserId());
+
+        // Only the patient owner and assigned doctor gain access once
+        // the consultation is in progress.
         assertThat(consultationAccessService.canAccess(
                 UUID.fromString(appointmentId),
                 patientAuth
@@ -615,16 +630,6 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 UUID.fromString(appointmentId),
                 adminAuth
         )).isFalse();
-
-        // BR-09: the room is read-only until the consultation starts.
-        assertThatThrownBy(() -> chatService.sendMessage(
-                UUID.fromString(appointmentId),
-                fixture.patientUserId(),
-                "Too early"
-        )).isInstanceOf(ConflictException.class);
-
-        recordPayment(appointmentId, fixture.patientUserId());
-        startConsultation(appointmentId, fixture.doctorUserId());
 
         // Messages are persisted with the authenticated sender.
         ChatMessageResponse patientMessage = chatService.sendMessage(
@@ -875,6 +880,15 @@ class ConsultationLifecyclePostgresIntegrationTests {
 
         JsonNode response = objectMapper.readTree(responseBody);
         return response.get("appointmentId").asText();
+    }
+
+    private void checkIn(String appointmentId, UUID patientUserId)
+            throws Exception {
+
+        mockMvc.perform(
+                patch(APPOINTMENTS_URL + "/" + appointmentId + "/check-in")
+                        .with(customerJwt(patientUserId))
+        ).andExpect(status().isOk());
     }
 
     private void recordPayment(String appointmentId, UUID patientUserId)

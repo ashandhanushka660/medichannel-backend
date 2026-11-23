@@ -2,7 +2,6 @@ package com.medichannel.security;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
@@ -55,14 +54,7 @@ import tools.jackson.databind.ObjectMapper;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    /**
-     * Vercel assigns a new preview hostname per deployment and rotates custom
-     * aliases, so pinning a single production origin leaves live chat broken
-     * whenever the frontend is served from another *.vercel.app hostname.
-     * Explicit origins from APP_FRONTEND_ORIGIN remain required; this pattern
-     * only adds Vercel's own domains, never a wildcard.
-     */
-    private static final String VERCEL_ORIGIN_PATTERN = "https://*.vercel.app";
+
 
     @Bean
     public SecurityFilterChain securityFilterChain(
@@ -140,7 +132,9 @@ public class SecurityConfig {
                         .requestMatchers(
                                 HttpMethod.POST,
                                 "/api/v1/auth/register",
-                                "/api/v1/auth/login"
+                                "/api/v1/auth/login",
+                                // Token-free completion of a forced reset.
+                                "/api/v1/auth/change-password"
                         ).permitAll()
 
                         // Customer's own patient profile.
@@ -444,13 +438,8 @@ public class SecurityConfig {
             );
         }
 
-        List<String> allowedPatterns = new ArrayList<>(origins);
-        if (!allowedPatterns.contains(VERCEL_ORIGIN_PATTERN)) {
-            allowedPatterns.add(VERCEL_ORIGIN_PATTERN);
-        }
-
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(allowedPatterns);
+        configuration.setAllowedOriginPatterns(origins);
         configuration.setAllowedMethods(List.of(
                 "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
         ));
@@ -526,7 +515,8 @@ public class SecurityConfig {
                 UUID userId = UUID.fromString(subject);
                 var userOpt = userRepository.findById(userId);
                 if (userOpt.isEmpty() || userOpt.get().getTokenVersion() != verNum.intValue()
-                        || !"ACTIVE".equals(userOpt.get().getAccountStatus())) {
+                        || !"ACTIVE".equals(userOpt.get().getAccountStatus())
+                        || userOpt.get().isPasswordChangeRequired()) {
                     return OAuth2TokenValidatorResult.failure(
                             new OAuth2Error(
                                     "invalid_token",
@@ -562,11 +552,14 @@ public class SecurityConfig {
     }
 
     /**
-     * Decoder used only by the STOMP handshake interceptor.
+     * Decoder used only by the STOMP handshake interceptor. Tickets carry
+     * the current token version and a random one-time id so a logged-out or
+     * suspended user cannot keep an existing WebSocket session alive.
      */
     @Bean
     public JwtDecoder webSocketJwtDecoder(
-            @Value("${JWT_SECRET}") String encodedSecret
+            @Value("${JWT_SECRET}") String encodedSecret,
+            UserRepository userRepository
     ) {
         NimbusJwtDecoder decoder = buildDecoder(encodedSecret);
 
@@ -583,12 +576,72 @@ public class SecurityConfig {
                                 )
                         );
 
+        OAuth2TokenValidator<Jwt> validateWebSocketSession = token -> {
+            Object verObj = token.getClaim("ver");
+            String jti = token.getClaimAsString("jti");
+
+            if (!(verObj instanceof Number verNum)
+                    || jti == null || jti.isBlank()) {
+                return OAuth2TokenValidatorResult.failure(
+                        new OAuth2Error(
+                                "invalid_token",
+                                "The WebSocket ticket is missing "
+                                        + "revocation claims.",
+                                null
+                        )
+                );
+            }
+
+            try {
+                String subject = token.getSubject();
+                if (subject == null || subject.isBlank()) {
+                    return OAuth2TokenValidatorResult.failure(
+                            new OAuth2Error(
+                                    "invalid_token",
+                                    "The ticket subject is missing.",
+                                    null
+                            )
+                    );
+                }
+
+                UUID userId = UUID.fromString(subject);
+                var userOpt = userRepository.findById(userId);
+
+                if (userOpt.isEmpty()
+                        || userOpt.get().getTokenVersion() != verNum.intValue()
+                        || !"ACTIVE".equals(userOpt.get().getAccountStatus())
+                        || !userOpt.get().isEmailVerified()
+                        || userOpt.get().isPasswordChangeRequired()) {
+                    return OAuth2TokenValidatorResult.failure(
+                            new OAuth2Error(
+                                    "invalid_token",
+                                    "The WebSocket session has expired "
+                                            + "or has been revoked.",
+                                    null
+                            )
+                    );
+                }
+            } catch (Exception exception) {
+                return OAuth2TokenValidatorResult.failure(
+                        new OAuth2Error(
+                                "invalid_token",
+                                "The WebSocket session has expired "
+                                        + "or has been revoked.",
+                                null
+                        )
+                );
+            }
+
+            return OAuth2TokenValidatorResult.success();
+        };
+
         decoder.setJwtValidator(
                 new DelegatingOAuth2TokenValidator<>(
                         JwtValidators.createDefaultWithIssuer(
                                 "medichannel-api"
                         ),
-                        requireWebSocketScope
+                        requireWebSocketScope,
+                        validateWebSocketSession
                 )
         );
 

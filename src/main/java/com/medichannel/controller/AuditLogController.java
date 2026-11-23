@@ -21,8 +21,12 @@ public class AuditLogController {
         this.auditLogService = auditLogService;
     }
 
+    /**
+     * Read-only by design. Audit rows are append-only (enforced by V19
+     * database triggers), so no update or delete endpoint is exposed.
+     */
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<AuditLogResponse>> getAuditLogs() {
         return ResponseEntity.ok(auditLogService.getRecentAuditLogs());
     }

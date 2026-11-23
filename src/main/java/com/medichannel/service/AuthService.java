@@ -5,7 +5,9 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,16 +18,29 @@ import com.medichannel.dto.auth.RegisterRequest;
 import com.medichannel.dto.auth.RegisterResponse;
 import com.medichannel.entity.Role;
 import com.medichannel.entity.User;
+import com.medichannel.exception.ForbiddenOperationException;
 import com.medichannel.exception.InvalidCredentialsException;
 import com.medichannel.repository.RoleRepository;
 import com.medichannel.repository.UserRepository;
 import com.medichannel.security.JwtService;
+import com.medichannel.security.PasswordPolicy;
+import com.medichannel.service.AuditLogService;
 
 @Service
 public class AuthService {
 
+    /** Published when a user's tokens must stop being accepted. */
+    public record WebSocketSessionRevokedEvent(UUID userId) {
+    }
+
     private static final String CUSTOMER_ROLE = "CUSTOMER";
     private static final int MAX_BCRYPT_PASSWORD_BYTES = 72;
+
+    @Autowired(required = false)
+    private ApplicationEventPublisher eventPublisher;
+
+    @Autowired(required = false)
+    private AuditLogService auditLogService;
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -158,6 +173,13 @@ public class AuthService {
                     dummyPasswordHash
             );
 
+            auditLogin(
+                    null,
+                    normalizedEmail,
+                    "LOGIN_FAILED",
+                    "Invalid credentials"
+            );
+
             throw new InvalidCredentialsException();
         }
 
@@ -170,12 +192,44 @@ public class AuthService {
 
         if (!passwordMatches) {
             loginAttemptService.recordFailedAttempt(normalizedEmail);
+            auditLogin(
+                    user.getId(),
+                    null,
+                    "LOGIN_FAILED",
+                    "Invalid credentials"
+            );
             throw new InvalidCredentialsException();
+        }
+
+        // A reset staff password is a temporary credential. Do not issue a
+        // normal access token until the owner has chosen a replacement.
+        if (optionalUser.get().isPasswordChangeRequired()) {
+            auditLogin(
+                    optionalUser.get().getId(),
+                    null,
+                    "LOGIN_FORCED_PASSWORD_CHANGE",
+                    "Password change required"
+            );
+            throw new ForbiddenOperationException(
+                    "A password change is required before signing in."
+            );
         }
 
         // Rechecks account status and lock state under a database lock.
         User authenticatedUser =
                 loginAttemptService.recordSuccessfulAttempt(normalizedEmail);
+
+        if (authenticatedUser.isPasswordChangeRequired()) {
+            auditLogin(
+                    authenticatedUser.getId(),
+                    null,
+                    "LOGIN_FORCED_PASSWORD_CHANGE",
+                    "Password change required"
+            );
+            throw new ForbiddenOperationException(
+                    "A password change is required before signing in."
+            );
+        }
 
         String roleName = authenticatedUser.getRole().getName();
 
@@ -184,6 +238,13 @@ public class AuthService {
                 authenticatedUser.getEmail(),
                 roleName,
                 authenticatedUser.getTokenVersion()
+        );
+
+        auditLogin(
+                authenticatedUser.getId(),
+                null,
+                "LOGIN_SUCCESS",
+                "Signed in"
         );
 
         return new LoginResponse(
@@ -196,11 +257,93 @@ public class AuthService {
         );
     }
 
+    /**
+     * Self-service completion of an administrator-initiated password reset.
+     * No bearer token is required: the temporary password is the credential.
+     */
+    @Transactional
+    public void changePassword(
+            String email,
+            String currentPassword,
+            String newPassword,
+            String confirmPassword
+    ) {
+        if (email == null || email.isBlank()
+                || currentPassword == null || currentPassword.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Email and current password are required."
+            );
+        }
+
+        if (newPassword == null || !newPassword.equals(confirmPassword)) {
+            throw new IllegalArgumentException(
+                    "Passwords do not match."
+            );
+        }
+
+        if (newPassword.getBytes(StandardCharsets.UTF_8).length
+                > MAX_BCRYPT_PASSWORD_BYTES) {
+            throw new IllegalArgumentException(
+                    "Password must not exceed 72 bytes when encoded as UTF-8."
+            );
+        }
+
+        PasswordPolicy.validate(newPassword);
+
+        String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
+
+        User user = userRepository.findByEmail(normalizedEmail)
+                .orElseThrow(InvalidCredentialsException::new);
+
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            loginAttemptService.recordFailedAttempt(normalizedEmail);
+            throw new InvalidCredentialsException();
+        }
+
+        user.updatePasswordHash(passwordEncoder.encode(newPassword));
+        user.clearPasswordChangeRequired();
+        user.unlock();
+        user.incrementTokenVersion();
+
+        userRepository.saveAndFlush(user);
+        publishSessionRevoked(user.getId());
+    }
+
     @Transactional
     public void logout(UUID userId) {
         userRepository.findById(userId).ifPresent(user -> {
             user.incrementTokenVersion();
             userRepository.saveAndFlush(user);
+            publishSessionRevoked(user.getId());
         });
+    }
+
+    private void publishSessionRevoked(UUID userId) {
+        if (eventPublisher != null && userId != null) {
+            eventPublisher.publishEvent(new WebSocketSessionRevokedEvent(userId));
+        }
+    }
+
+    /**
+     * Records authentication outcomes without writing an email address or any
+     * other personal identifier into the audit details.
+     */
+    private void auditLogin(
+            UUID userId,
+            String email,
+            String action,
+            String details
+    ) {
+        if (auditLogService == null) {
+            return;
+        }
+
+        try {
+            auditLogService.logLogin(userId, email, action, null, details);
+        } catch (RuntimeException e) {
+            // Auditing must never prevent a legitimate login response.
+            org.slf4j.LoggerFactory.getLogger(AuthService.class)
+                    .warn("Unable to record login audit event: {}", e.getMessage());
+        }
     }
 }

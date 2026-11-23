@@ -2,6 +2,7 @@ package com.medichannel.service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -31,6 +32,13 @@ public class SessionQueueService {
     public static final String SESSION_TOPIC_PREFIX = "/topic/sessions/";
     public static final String SESSION_TOPIC_SUFFIX = "/queue";
     public static final String CATALOGUE_TOPIC = "/topic/sessions";
+
+    private static final List<AppointmentStatus> ACTIVE_STATUSES =
+            List.of(
+                    AppointmentStatus.BOOKED,
+                    AppointmentStatus.ARRIVED,
+                    AppointmentStatus.IN_CONSULTATION
+            );
 
     private final AppointmentRepository appointmentRepository;
     private final DoctorSessionRepository doctorSessionRepository;
@@ -75,27 +83,35 @@ public class SessionQueueService {
                 .map(Appointment::getAppointmentNumber)
                 .orElse(null);
 
-        Integer nextNumber = appointmentRepository
-                .findFirstBySession_IdAndStatusOrderByAppointmentNumberAsc(
-                        sessionId,
-                        AppointmentStatus.ARRIVED
-                )
-                .map(Appointment::getAppointmentNumber)
-                .orElseGet(() -> appointmentRepository
-                        .findFirstBySession_IdAndStatusOrderByAppointmentNumberAsc(
-                                sessionId,
-                                AppointmentStatus.BOOKED
-                        )
-                        .map(Appointment::getAppointmentNumber)
-                        .orElse(null)
+        /*
+         * BR-03: the database counter is the only source of the next
+         * allocatable number. Cancelled and no-show numbers are never
+         * handed out again.
+         */
+        Integer storedLastNumber =
+                appointmentRepository.findLastAppointmentNumberBySessionId(
+                        sessionId
                 );
+        int lastNumber = storedLastNumber == null ? 0 : storedLastNumber;
+        int availableSlots = Math.max(
+                0,
+                session.getMaxAppointments() - lastNumber
+        );
+        Integer nextNumber = availableSlots == 0 ? null : lastNumber + 1;
 
+        /*
+         * RT-02: the queue length counts only patients who still occupy
+         * a live place. Cancelled and no-show appointments remain in
+         * history but no longer occupy capacity.
+         */
         int remaining = Math.max(
                 0,
                 session.getMaxAppointments()
-                        - (int) appointmentRepository.countBySession_Id(
-                                sessionId
-                        )
+                        - (int) appointmentRepository
+                                .countBySession_IdAndStatusIn(
+                                        sessionId,
+                                        ACTIVE_STATUSES
+                                )
         );
 
         return new SessionQueueSummary(
@@ -103,6 +119,7 @@ public class SessionQueueService {
                 nowServing,
                 nextNumber,
                 remaining,
+                availableSlots,
                 session.getMaxAppointments(),
                 session.getStatus(),
                 clock.instant()

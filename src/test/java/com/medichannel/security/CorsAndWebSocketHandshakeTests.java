@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "spring.jpa.show-sql=false",
     "spring.jpa.open-in-view=false",
     "spring.jpa.properties.hibernate.jdbc.time_zone=UTC",
-    "APP_FRONTEND_ORIGIN=http://localhost:3000,https://medichannel.netlify.app"
+    "APP_FRONTEND_ORIGIN=http://localhost:3000,https://medichannel.netlify.app,https://medichannel-f.vercel.app"
 })
 @AutoConfigureMockMvc
 class CorsAndWebSocketHandshakeTests {
@@ -70,8 +70,8 @@ class CorsAndWebSocketHandshakeTests {
     }
 
     @Test
-    void preflightFromVercelDeploymentOriginIsAccepted() throws Exception {
-        String vercelOrigin = "https://ashandhanushka660-medichannel-f.vercel.app";
+    void preflightFromExactConfiguredVercelOriginIsAccepted() throws Exception {
+        String vercelOrigin = "https://medichannel-f.vercel.app";
         mockMvc.perform(
             options("/api/v1/doctors")
                 .header("Origin", vercelOrigin)
@@ -80,6 +80,17 @@ class CorsAndWebSocketHandshakeTests {
             .andExpect(status().isOk())
             .andExpect(header().string(
                 "Access-Control-Allow-Origin", vercelOrigin));
+    }
+
+    @Test
+    void preflightFromUnlistedVercelPreviewOriginIsRejected() throws Exception {
+        String vercelOrigin = "https://ashandhanushka660-medichannel-f.vercel.app";
+        mockMvc.perform(
+            options("/api/v1/doctors")
+                .header("Origin", vercelOrigin)
+                .header("Access-Control-Request-Method", "GET")
+        )
+            .andExpect(status().isForbidden());
     }
 
     @Test

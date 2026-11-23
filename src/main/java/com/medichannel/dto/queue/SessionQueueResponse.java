@@ -17,6 +17,7 @@ public record SessionQueueResponse(
         Integer nextNumber,
 
         int remainingAppointments,
+        int availableSlots,
         int maxAppointments,
 
         SessionStatus status,

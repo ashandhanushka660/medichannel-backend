@@ -26,6 +26,45 @@ public interface AppointmentRepository
 
     long countBySession_Id(UUID sessionId);
 
+    /**
+     * Reads the counter maintained by the allocation trigger. Using the
+     * database value avoids a stale in-memory session entity after a
+     * booking in the same transaction.
+     */
+    @Query(value = """
+            SELECT last_appointment_number
+            FROM doctor_sessions
+            WHERE id = :sessionId
+            """, nativeQuery = true)
+    Integer findLastAppointmentNumberBySessionId(
+            @Param("sessionId") UUID sessionId
+    );
+
+    // Only these statuses occupy a place in the live queue.
+    long countBySession_IdAndStatusIn(
+            UUID sessionId,
+            Collection<AppointmentStatus> statuses
+    );
+
+    /**
+     * The third active appointment strictly after the number currently
+     * being served. Gaps left by cancelled appointments are ignored by
+     * ordering on the database allocated number.
+     */
+    @Query(value = """
+            SELECT a.*
+            FROM appointments a
+            WHERE a.session_id = :sessionId
+              AND a.status IN ('BOOKED', 'ARRIVED', 'IN_CONSULTATION')
+              AND a.appointment_number > :afterNumber
+            ORDER BY a.appointment_number ASC
+            LIMIT 1 OFFSET 2
+            """, nativeQuery = true)
+    Optional<Appointment> findThirdActiveAppointmentAfterNumber(
+            @Param("sessionId") UUID sessionId,
+            @Param("afterNumber") Integer afterNumber
+    );
+
     Optional<Appointment>
             findFirstBySession_IdAndStatusOrderByAppointmentNumberAsc(
                     UUID sessionId,
@@ -56,10 +95,22 @@ public interface AppointmentRepository
             UUID userId
     );
 
+    boolean existsByIdAndPatient_User_IdAndStatus(
+            UUID appointmentId,
+            UUID userId,
+            AppointmentStatus status
+    );
+
     // Check whether the authenticated doctor is assigned to this appointment.
     boolean existsByIdAndSession_Doctor_User_Id(
             UUID appointmentId,
             UUID userId
+    );
+
+    boolean existsByIdAndSession_Doctor_User_IdAndStatus(
+            UUID appointmentId,
+            UUID userId,
+            AppointmentStatus status
     );
 
     // Check whether any appointments exist for the specified doctor.

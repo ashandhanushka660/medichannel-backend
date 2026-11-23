@@ -15,6 +15,8 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
+import com.medichannel.security.DataProtectionService;
+
 @Entity
 @Table(name = "users")
 public class User {
@@ -27,11 +29,21 @@ public class User {
     @JoinColumn(name = "role_id", nullable = false)
     private Role role;
 
-    @Column(name = "email", nullable = false, unique = true, length = 254)
+    // Ciphertext envelope ("v1:...") after the startup backfill. Plaintext is
+    // only ever held transiently before the persist/update callback runs.
+    @Column(name = "email", nullable = false, length = 512)
     private String email;
+
+    // HMAC-SHA256 of the normalised plaintext email. Used for every equality
+    // lookup and for database-level uniqueness.
+    @Column(name = "email_lookup_hash", length = 64)
+    private String emailLookupHash;
 
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
+
+    @Column(name = "password_change_required", nullable = false)
+    private boolean passwordChangeRequired = false;
 
     @Column(name = "account_status", nullable = false, length = 20)
     private String accountStatus = "PENDING";
@@ -64,10 +76,12 @@ public class User {
         this.role = role;
         this.email = email;
         this.passwordHash = passwordHash;
+        this.emailLookupHash = computeEmailLookupHash(email);
     }
 
     @PrePersist
     protected void onCreate() {
+        protectEmail();
         Instant now = Instant.now();
         createdAt = now;
         updatedAt = now;
@@ -75,7 +89,39 @@ public class User {
 
     @PreUpdate
     protected void onUpdate() {
+        protectEmail();
         updatedAt = Instant.now();
+    }
+
+    /**
+     * Encrypt the email before it reaches the database. Already-encrypted
+     * values are left untouched so repeated updates never nest envelopes.
+     */
+    private void protectEmail() {
+        if (email == null || !DataProtectionService.isAvailable()) {
+            return;
+        }
+
+        DataProtectionService protection = DataProtectionService.getInstance();
+
+        if (DataProtectionService.isEncrypted(email)) {
+            if (emailLookupHash == null) {
+                emailLookupHash = protection.emailLookupHash(
+                        protection.decryptEmail(email)
+                );
+            }
+            return;
+        }
+
+        emailLookupHash = protection.emailLookupHash(email);
+        email = protection.encryptEmail(email);
+    }
+
+    private static String computeEmailLookupHash(String email) {
+        if (email == null || !DataProtectionService.isAvailable()) {
+            return null;
+        }
+        return DataProtectionService.getInstance().emailLookupHash(email);
     }
 
     // Record an unsuccessful login attempt.
@@ -180,6 +226,41 @@ public class User {
             throw new IllegalArgumentException("Email is required.");
         }
         this.email = email;
+        this.emailLookupHash = computeEmailLookupHash(email);
+    }
+
+    /**
+     * Raw database value. Intentionally distinct from {@link #getEmail()},
+     * which always returns the readable plaintext. Used by the one-off
+     * backfill runner to identify legacy rows.
+     */
+    public String getStoredEmail() {
+        return email;
+    }
+
+    public boolean isEmailEncrypted() {
+        return DataProtectionService.isEncrypted(email);
+    }
+
+    public String getEmailLookupHash() {
+        return emailLookupHash;
+    }
+
+    /** Used by the startup backfill to repair a missing lookup hash in place. */
+    public void setEmailLookupHashForMigration(String emailLookupHash) {
+        this.emailLookupHash = emailLookupHash;
+    }
+
+    public boolean isPasswordChangeRequired() {
+        return passwordChangeRequired;
+    }
+
+    public void requirePasswordChange() {
+        this.passwordChangeRequired = true;
+    }
+
+    public void clearPasswordChangeRequired() {
+        this.passwordChangeRequired = false;
     }
 
     // Remove a temporary lock without granting a new verification status.
@@ -202,6 +283,10 @@ public class User {
     }
 
     public String getEmail() {
+        if (DataProtectionService.isAvailable()
+                && DataProtectionService.isEncrypted(email)) {
+            return DataProtectionService.getInstance().decryptEmail(email);
+        }
         return email;
     }
 

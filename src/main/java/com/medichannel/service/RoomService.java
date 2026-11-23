@@ -12,33 +12,44 @@ import com.medichannel.entity.Room;
 import com.medichannel.exception.ConflictException;
 import com.medichannel.exception.ResourceNotFoundException;
 import com.medichannel.repository.RoomRepository;
+import com.medichannel.repository.UserRepository;
 
 @Service
 public class RoomService {
 
     private final RoomRepository roomRepository;
     private final AuditLogService auditLogService;
+    private final UserRepository userRepository;
 
     public RoomService(
             RoomRepository roomRepository,
-            AuditLogService auditLogService
+            AuditLogService auditLogService,
+            UserRepository userRepository
     ) {
         this.roomRepository = roomRepository;
         this.auditLogService = auditLogService;
+        this.userRepository = userRepository;
     }
 
+    // Resolve the actor from the validated JWT subject (or WS principal id),
+    // never from a client-controlled email claim.
     private String getActorEmail() {
         try {
             var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
             if (auth != null) {
+                String subject = null;
+
                 if (auth.getPrincipal() instanceof org.springframework.security.oauth2.jwt.Jwt jwt) {
-                    String email = jwt.getClaimAsString("email");
-                    if (email != null && !email.isBlank()) {
-                        return email;
-                    }
+                    subject = jwt.getSubject();
+                } else if (auth.getName() != null && !auth.getName().isBlank()) {
+                    subject = auth.getName();
                 }
-                if (auth.getName() != null && !auth.getName().isBlank() && auth.getName().contains("@")) {
-                    return auth.getName();
+
+                if (subject != null) {
+                    UUID userId = UUID.fromString(subject);
+                    return userRepository.findById(userId)
+                            .map(user -> user.getEmail())
+                            .orElse(subject);
                 }
             }
         } catch (Exception ignored) {

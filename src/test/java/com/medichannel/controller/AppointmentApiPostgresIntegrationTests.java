@@ -148,13 +148,19 @@ class AppointmentApiPostgresIntegrationTests {
                         .value(appointmentId))
                 .andExpect(jsonPath("$.appointmentNumber").value(1));
 
-        // 4. Cancel the unpaid appointment.
+        // 4. Cancel the unpaid appointment with a mandatory reason.
         mockMvc.perform(
                 patch(APPOINTMENTS_URL + "/" + appointmentId + "/cancel")
                         .with(customerJwt(fixture.patientUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason": "Patient request"}
+                                """)
         )
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("CANCELLED"));
+                .andExpect(jsonPath("$.status").value("CANCELLED"))
+                .andExpect(jsonPath("$.cancellationReason")
+                        .value("Patient request"));
 
         // 5. Confirm cancellation remains in appointment history.
         mockMvc.perform(
@@ -179,6 +185,63 @@ class AppointmentApiPostgresIntegrationTests {
         );
 
         assertThat(appointmentCount).isEqualTo(1);
+    }
+
+    @Test
+    void patientCancellationRequiresAReasonAndAnUnpaidBooking()
+            throws Exception {
+
+        TestFixture fixture = createFixture();
+
+        String responseBody = mockMvc.perform(
+                post(APPOINTMENTS_URL)
+                        .with(customerJwt(fixture.patientUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bookingJson(
+                                fixture.sessionId(),
+                                "Cancellation rule test"
+                        ))
+        )
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String appointmentId = objectMapper.readTree(responseBody)
+                .get("appointmentId")
+                .asText();
+
+        // A blank reason is rejected by request validation.
+        mockMvc.perform(
+                patch(APPOINTMENTS_URL + "/" + appointmentId + "/cancel")
+                        .with(customerJwt(fixture.patientUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason": "   "}
+                                """)
+        )
+                .andExpect(status().isBadRequest());
+
+        // Once paid, the patient can no longer cancel the appointment.
+        mockMvc.perform(
+                post(APPOINTMENTS_URL + "/" + appointmentId + "/payments")
+                        .with(customerJwt(fixture.patientUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"method": "CARD"}
+                                """)
+        )
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(
+                patch(APPOINTMENTS_URL + "/" + appointmentId + "/cancel")
+                        .with(customerJwt(fixture.patientUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason": "Changed my mind"}
+                                """)
+        )
+                .andExpect(status().isConflict());
     }
 
     @Test

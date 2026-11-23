@@ -26,19 +26,22 @@ public class ConsultationSummaryService {
     private final AppointmentAccessPolicy accessPolicy;
     private final PatientDataProtectionService dataProtectionService;
     private final NotificationService notificationService;
+    private final AuditLogService auditLogService;
 
     public ConsultationSummaryService(
             ConsultationSummaryRepository summaryRepository,
             AppointmentRepository appointmentRepository,
             AppointmentAccessPolicy accessPolicy,
             PatientDataProtectionService dataProtectionService,
-            NotificationService notificationService
+            NotificationService notificationService,
+            AuditLogService auditLogService
     ) {
         this.summaryRepository = summaryRepository;
         this.appointmentRepository = appointmentRepository;
         this.accessPolicy = accessPolicy;
         this.dataProtectionService = dataProtectionService;
         this.notificationService = notificationService;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -127,7 +130,9 @@ public class ConsultationSummaryService {
         return toResponse(summary);
     }
 
-    @Transactional(readOnly = true)
+    // Read-write transaction so the audit insert for a successful record
+    // opening is committed together with this operation.
+    @Transactional
     public ConsultationSummaryResponse get(
             UUID actorUserId,
             String actorRole,
@@ -161,6 +166,15 @@ public class ConsultationSummaryService {
                     "The consultation summary is only available after the consultation is completed."
             );
         }
+
+        // The authorization and status checks above all passed: this is a
+        // successful consultation record opening. Only ids/time/IP are logged.
+        auditLogService.logConsultationView(
+                actorUserId,
+                "CONSULTATION_SUMMARY_VIEWED",
+                appointmentId,
+                null
+        );
 
         return toResponse(summary);
     }

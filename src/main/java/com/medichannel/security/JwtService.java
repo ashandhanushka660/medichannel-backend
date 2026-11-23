@@ -11,6 +11,10 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.stereotype.Service;
 
+import com.medichannel.entity.User;
+import com.medichannel.exception.ForbiddenOperationException;
+import com.medichannel.repository.UserRepository;
+
 @Service
 public class JwtService {
 
@@ -25,11 +29,15 @@ public class JwtService {
 
     public static final String WS_SCOPE_CLAIM = "scope";
     public static final String WS_SCOPE_VALUE = "ws";
+    public static final String WS_JTI_CLAIM = "jti";
+    public static final String VERSION_CLAIM = "ver";
 
     private final JwtEncoder jwtEncoder;
+    private final UserRepository userRepository;
 
-    public JwtService(JwtEncoder jwtEncoder) {
+    public JwtService(JwtEncoder jwtEncoder, UserRepository userRepository) {
         this.jwtEncoder = jwtEncoder;
+        this.userRepository = userRepository;
     }
 
     public long getAccessTokenLifetimeSeconds() {
@@ -76,11 +84,31 @@ public class JwtService {
 
     /**
      * Mint a 60 second ticket that is only accepted by the WebSocket
-     * handshake. The REST resource server rejects it.
+     * handshake. The REST resource server rejects it. The current token
+     * version is read from the database so a stale REST session cannot mint
+     * a ticket for a revoked account.
      */
+    public String generateWebSocketTicket(UUID userId, String role) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ForbiddenOperationException(
+                        "WebSocket access is not permitted."
+                ));
+
+        if (!"ACTIVE".equals(user.getAccountStatus())
+                || !user.isEmailVerified()
+                || user.isPasswordChangeRequired()) {
+            throw new ForbiddenOperationException(
+                    "WebSocket access is not permitted."
+            );
+        }
+
+        return generateWebSocketTicket(userId, role, user.getTokenVersion());
+    }
+
     public String generateWebSocketTicket(
             UUID userId,
-            String role
+            String role,
+            int tokenVersion
     ) {
 
         Instant now = Instant.now();
@@ -91,6 +119,8 @@ public class JwtService {
                 .expiresAt(now.plusSeconds(WS_TICKET_LIFETIME_SECONDS))
                 .subject(userId.toString())
                 .claim("role", role)
+                .claim(VERSION_CLAIM, tokenVersion)
+                .claim(WS_JTI_CLAIM, UUID.randomUUID().toString())
                 .claim(WS_SCOPE_CLAIM, WS_SCOPE_VALUE)
                 .build();
 

@@ -18,6 +18,11 @@ public record SessionQueueSummary(
         Integer nextNumber,
 
         int remainingAppointments,
+
+        // Capacity that is still allocatable. Unlike remainingAppointments,
+        // this never reuses the number of a cancelled/no-show appointment.
+        int availableSlots,
+
         int maxAppointments,
 
         SessionStatus status,
