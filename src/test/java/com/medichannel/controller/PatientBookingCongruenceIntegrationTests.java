@@ -277,6 +277,78 @@ class PatientBookingCongruenceIntegrationTests {
         assertThat(patient.getId()).isNotNull();
     }
 
+    @Test
+    void selectedHourFiltersSessionsToTheMatchingClinicPeriod()
+            throws Exception {
+        String unique = UUID.randomUUID().toString().replace("-", "");
+        Role doctorRole = roleRepository.findByName("DOCTOR").orElseThrow();
+        Specialisation specialisation = specialisationRepository.saveAndFlush(
+                new Specialisation(
+                        "Period Test " + unique,
+                        "Temporary clinic period test"
+                )
+        );
+        Doctor doctor = createDoctor(
+                doctorRole,
+                specialisation,
+                "Period",
+                "Doctor",
+                "CONG-P-" + unique,
+                unique
+        );
+
+        LocalDate date = LocalDate.now(ZoneId.of("Asia/Colombo")).plusDays(31);
+        DoctorSession morning = createSession(
+                doctor,
+                date,
+                LocalTime.of(7, 0),
+                LocalTime.of(10, 0),
+                10
+        );
+        DoctorSession afternoon = createSession(
+                doctor,
+                date,
+                LocalTime.of(13, 0),
+                LocalTime.of(16, 0),
+                10
+        );
+
+        JsonNode morningResults = objectMapper.readTree(
+                mockMvc.perform(get("/api/v1/sessions").param("period", "08:00"))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString()
+        );
+        assertThat(sessionIds(morningResults))
+                .contains(morning.getId().toString())
+                .doesNotContain(afternoon.getId().toString());
+
+        JsonNode afternoonResults = objectMapper.readTree(
+                mockMvc.perform(get("/api/v1/sessions").param("period", "14:00"))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString()
+        );
+        assertThat(sessionIds(afternoonResults))
+                .contains(afternoon.getId().toString())
+                .doesNotContain(morning.getId().toString());
+
+        JsonNode boundaryResults = objectMapper.readTree(
+                mockMvc.perform(get("/api/v1/sessions").param("period", "10:00"))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString()
+        );
+        assertThat(sessionIds(boundaryResults))
+                .doesNotContain(
+                        morning.getId().toString(),
+                        afternoon.getId().toString()
+                );
+    }
+
     private java.util.List<String> sessionIds(JsonNode sessions) {
         java.util.List<String> ids = new java.util.ArrayList<>();
         sessions.forEach((session) -> ids.add(session.get("sessionId").asText()));

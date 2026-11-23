@@ -1,6 +1,7 @@
 package com.medichannel.controller;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -37,7 +38,8 @@ public class DoctorSessionController {
             @RequestParam(required = false) UUID specialisationId,
             @RequestParam(required = false) LocalDate date,
             @RequestParam(required = false) String q,
-            @RequestParam(required = false) ConsultationType consultationType
+            @RequestParam(required = false) ConsultationType consultationType,
+            @RequestParam(required = false) LocalTime period
     ) {
         return ResponseEntity.ok(
                 doctorSessionService.getPublicSessions(
@@ -45,7 +47,8 @@ public class DoctorSessionController {
                         specialisationId,
                         date,
                         q,
-                        consultationType
+                        consultationType,
+                        period
                 )
         );
     }

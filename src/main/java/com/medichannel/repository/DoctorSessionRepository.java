@@ -96,6 +96,8 @@ public interface DoctorSessionRepository
               AND s.startTime >= :clinicStart
               AND s.endTime <= :clinicEnd
               AND s.minutesPerPatient = :slotMinutes
+              AND s.startTime < :periodEnd
+              AND s.endTime > :periodStart
               AND d.available = true
               AND sp.active = true
               AND u.accountStatus = 'ACTIVE'
@@ -124,6 +126,8 @@ public interface DoctorSessionRepository
             @Param("consultationType") ConsultationType consultationType,
             @Param("clinicStart") LocalTime clinicStart,
             @Param("clinicEnd") LocalTime clinicEnd,
-            @Param("slotMinutes") int slotMinutes
+            @Param("slotMinutes") int slotMinutes,
+            @Param("periodStart") LocalTime periodStart,
+            @Param("periodEnd") LocalTime periodEnd
     );
 }

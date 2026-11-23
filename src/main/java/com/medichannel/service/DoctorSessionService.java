@@ -424,13 +424,18 @@ public class DoctorSessionService {
             UUID specialisationId,
             LocalDate sessionDate,
             String doctorName,
-            ConsultationType consultationType
+            ConsultationType consultationType,
+            LocalTime period
     ) {
         LocalDateTime now = LocalDateTime.now(clock);
 
         String query = doctorName == null
                 ? null
                 : doctorName.trim().toLowerCase(Locale.ROOT);
+        LocalTime periodStart = period == null ? LocalTime.MIDNIGHT : period;
+        LocalTime periodEnd = period == null
+                ? LocalTime.of(23, 59, 59)
+                : period.plusHours(1);
 
         return doctorSessionRepository.findPublicOpenSessions(
                 SessionStatus.OPEN,
@@ -443,7 +448,9 @@ public class DoctorSessionService {
                 consultationType,
                 ClinicSchedule.START_TIME,
                 ClinicSchedule.END_TIME,
-                ClinicSchedule.MINUTES_PER_PATIENT
+                ClinicSchedule.MINUTES_PER_PATIENT,
+                periodStart,
+                periodEnd
         ).stream().map(this::toResponse).toList();
     }
 
