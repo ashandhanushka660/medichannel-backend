@@ -63,6 +63,7 @@ public class AppointmentService {
     private final NotificationService notificationService;
     private final AppointmentAccessPolicy accessPolicy;
     private final SessionQueueService sessionQueueService;
+    private final AuditLogService auditLogService;
     private final Clock clock;
 
     private static final String THREE_NUMBERS_AWAY_TITLE =
@@ -80,6 +81,7 @@ public class AppointmentService {
             NotificationService notificationService,
             AppointmentAccessPolicy accessPolicy,
             SessionQueueService sessionQueueService,
+            AuditLogService auditLogService,
             Clock clock
     ) {
         this.appointmentRepository = appointmentRepository;
@@ -93,6 +95,7 @@ public class AppointmentService {
         this.notificationService = notificationService;
         this.accessPolicy = accessPolicy;
         this.sessionQueueService = sessionQueueService;
+        this.auditLogService = auditLogService;
         this.clock = clock;
     }
 
@@ -283,7 +286,7 @@ public class AppointmentService {
         getEligiblePatient(userId);
 
         return appointmentRepository
-                .findAllByPatient_User_IdOrderByCreatedAtDesc(userId)
+                .findAllByPatient_User_IdAndPatientHiddenAtIsNullOrderByCreatedAtDesc(userId)
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -304,6 +307,40 @@ public class AppointmentService {
                 ));
 
         return toResponse(appointment);
+    }
+
+    /**
+     * Clear a closed appointment from the patient's own history view. The
+     * appointment and every related record are retained; only this
+     * participant's visibility flag is set.
+     */
+    @Transactional
+    public void hideMyAppointment(
+            UUID userId,
+            UUID appointmentId,
+            String ipAddress
+    ) {
+        getEligiblePatient(userId);
+
+        Appointment appointment = appointmentRepository
+                .findByIdAndPatient_User_Id(appointmentId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Appointment was not found."
+                ));
+
+        ensureHistoryCanBeHidden(appointment);
+        appointment.hideFromPatient(clock.instant());
+        appointmentRepository.saveAndFlush(appointment);
+
+        auditLogService.log(
+                userId,
+                "CUSTOMER",
+                "APPOINTMENT_HISTORY_HIDDEN",
+                "Patient cleared appointment " + appointmentId
+                        + " from their history view.",
+                ipAddress,
+                appointmentId
+        );
     }
 
     // PATCH: Cancel an unpaid booking belonging to the signed-in patient.
@@ -483,26 +520,26 @@ public class AppointmentService {
 
         if (date != null && status != null) {
             appointments = appointmentRepository
-                    .findAllBySession_Doctor_User_IdAndSession_SessionDateAndStatusOrderBySession_StartTimeAsc(
+                    .findAllBySession_Doctor_User_IdAndSession_SessionDateAndStatusAndDoctorHiddenAtIsNullOrderBySession_StartTimeAsc(
                             doctorUserId,
                             date,
                             status
                     );
         } else if (date != null) {
             appointments = appointmentRepository
-                    .findAllBySession_Doctor_User_IdAndSession_SessionDateOrderBySession_StartTimeAsc(
+                    .findAllBySession_Doctor_User_IdAndSession_SessionDateAndDoctorHiddenAtIsNullOrderBySession_StartTimeAsc(
                             doctorUserId,
                             date
                     );
         } else if (status != null) {
             appointments = appointmentRepository
-                    .findAllBySession_Doctor_User_IdAndStatusOrderBySession_SessionDateDescSession_StartTimeAsc(
+                    .findAllBySession_Doctor_User_IdAndStatusAndDoctorHiddenAtIsNullOrderBySession_SessionDateDescSession_StartTimeAsc(
                             doctorUserId,
                             status
                     );
         } else {
             appointments = appointmentRepository
-                    .findAllBySession_Doctor_User_IdOrderBySession_SessionDateDescSession_StartTimeAsc(
+                    .findAllBySession_Doctor_User_IdAndDoctorHiddenAtIsNullOrderBySession_SessionDateDescSession_StartTimeAsc(
                             doctorUserId
                     );
         }
@@ -519,6 +556,36 @@ public class AppointmentService {
     ) {
         return toDoctorResponse(
                 findDoctorAppointment(doctorUserId, appointmentId)
+        );
+    }
+
+    /**
+     * Clear a closed appointment from the assigned doctor's own queue/history
+     * view. The patient's view and the underlying records are unaffected.
+     */
+    @Transactional
+    public void hideDoctorAppointment(
+            UUID doctorUserId,
+            UUID appointmentId,
+            String ipAddress
+    ) {
+        Appointment appointment = findDoctorAppointment(
+                doctorUserId,
+                appointmentId
+        );
+
+        ensureHistoryCanBeHidden(appointment);
+        appointment.hideFromDoctor(clock.instant());
+        appointmentRepository.saveAndFlush(appointment);
+
+        auditLogService.log(
+                doctorUserId,
+                "DOCTOR",
+                "APPOINTMENT_HISTORY_HIDDEN",
+                "Doctor cleared appointment " + appointmentId
+                        + " from their session history view.",
+                ipAddress,
+                appointmentId
         );
     }
 
@@ -900,7 +967,7 @@ public class AppointmentService {
 
     private SessionQueueResponse buildQueueResponse(DoctorSession session) {
         List<DoctorAppointmentResponse> appointments = appointmentRepository
-                .findBySession_IdOrderByAppointmentNumberAsc(session.getId())
+                .findBySession_IdAndDoctorHiddenAtIsNullOrderByAppointmentNumberAsc(session.getId())
                 .stream()
                 .map(this::toDoctorResponse)
                 .toList();
@@ -1003,6 +1070,17 @@ public class AppointmentService {
                 ));
 
         return toAdminResponse(appointment);
+    }
+
+    private void ensureHistoryCanBeHidden(Appointment appointment) {
+        AppointmentStatus status = appointment.getStatus();
+        if (status != AppointmentStatus.COMPLETED
+                && status != AppointmentStatus.NO_SHOW
+                && status != AppointmentStatus.CANCELLED) {
+            throw new ConflictException(
+                    "Only completed or closed appointments can be cleared from history."
+            );
+        }
     }
 
     private Appointment findDoctorAppointment(

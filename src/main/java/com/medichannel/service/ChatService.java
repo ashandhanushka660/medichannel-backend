@@ -161,10 +161,13 @@ public class ChatService {
 
         accessPolicy.requireChatParticipant(appointment, userId);
 
-        // BR-09: chat history is part of the consultation room and must not
-        // be readable while the consultation is still locked or after it has
-        // been closed by a role that never opened the room.
-        if (appointment.getStatus() != AppointmentStatus.IN_CONSULTATION) {
+        // BR-09: the room is locked until the consultation starts, but a
+        // completed consultation remains readable by its two participants.
+        // The UI never requests history for BOOKED/ARRIVED rows; allowing
+        // COMPLETED here keeps the promised read-only transcript available
+        // after the doctor finishes the consultation.
+        if (appointment.getStatus() != AppointmentStatus.IN_CONSULTATION
+                && appointment.getStatus() != AppointmentStatus.COMPLETED) {
             throw new ForbiddenOperationException(
                     "Consultation chat is available only during an active consultation."
             );

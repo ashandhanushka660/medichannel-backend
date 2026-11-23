@@ -3,6 +3,7 @@ package com.medichannel.controller;
 import java.util.List;
 import java.util.UUID;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 import org.springframework.http.HttpStatus;
@@ -99,5 +100,31 @@ public class AppointmentController {
         return ResponseEntity.ok(
                 appointmentService.checkIn(userId, appointmentId)
         );
+    }
+
+    /**
+     * Clear a closed appointment from the patient's own history view. The
+     * clinical and payment records are retained.
+     */
+    @PatchMapping("/{appointmentId}/hide")
+    public ResponseEntity<Void> hideAppointment(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID appointmentId,
+            HttpServletRequest request
+    ) {
+        appointmentService.hideMyAppointment(
+                UUID.fromString(jwt.getSubject()),
+                appointmentId,
+                clientIp(request)
+        );
+        return ResponseEntity.noContent().build();
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 }

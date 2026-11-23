@@ -667,7 +667,8 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 "Spoofed message"
         )).isInstanceOf(ForbiddenOperationException.class);
 
-        // Completed consultations stop accepting messages.
+        // Completed consultations stop accepting messages but the two
+        // participants can still read the transcript in read-only mode.
         completeConsultation(appointmentId, fixture.doctorUserId());
 
         assertThatThrownBy(() -> chatService.sendMessage(
@@ -675,6 +676,20 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 fixture.patientUserId(),
                 "Message after completion"
         )).isInstanceOf(ConflictException.class);
+
+        mockMvc.perform(
+                get(APPOINTMENTS_URL + "/" + appointmentId + "/chat/messages")
+                        .with(customerJwt(fixture.patientUserId()))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
+
+        mockMvc.perform(
+                get(APPOINTMENTS_URL + "/" + appointmentId + "/chat/messages")
+                        .with(doctorJwt(fixture.doctorUserId()))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
     }
 
     @Test

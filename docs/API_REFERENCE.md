@@ -84,6 +84,7 @@ createdAt, updatedAt }`. PII is encrypted at rest.
 | `GET` | `/appointments/{appointmentId}` | Own appointment |
 | `PATCH` | `/appointments/{appointmentId}/cancel` | Cancel before the session |
 | `PATCH` | `/appointments/{appointmentId}/check-in` | `BOOKED → ARRIVED` |
+| `PATCH` | `/appointments/{appointmentId}/hide` | Clear a closed row from this patient's history view |
 
 Booking request:
 
@@ -99,6 +100,11 @@ Response fields include `appointmentId`, `appointmentNumber`, `sessionDate`,
 Booking rules: session must be `OPEN`, before the booking deadline (60 min
 physical / 30 min online), capacity available, one active booking per patient
 per session.
+
+`PATCH /appointments/{appointmentId}/hide` is a non-destructive, participant-
+scoped visibility change. It is allowed only for `COMPLETED`, `NO_SHOW` or
+`CANCELLED` rows and returns `204`. The appointment, payment, chat, summary,
+review and audit records are retained; the doctor's view is unaffected.
 
 ### Live queue
 
@@ -144,6 +150,7 @@ Authenticated patient's payment history, newest first.
 | `PATCH` | `/doctor/appointments/{appointmentId}/start` | Start consultation |
 | `PATCH` | `/doctor/appointments/{appointmentId}/complete` | Complete consultation |
 | `PATCH` | `/doctor/appointments/{appointmentId}/no-show` | Mark no-show |
+| `PATCH` | `/doctor/appointments/{appointmentId}/hide` | Clear a closed row from this doctor's session history view |
 | `GET` | `/doctor/sessions?date=` | Own sessions |
 
 Rules:
@@ -152,6 +159,8 @@ Rules:
   `IN_PROGRESS` session; becomes `IN_CONSULTATION`.
 - Complete requires `IN_CONSULTATION`; becomes `COMPLETED`.
 - No-show is allowed from `BOOKED`/`ARRIVED`.
+- Hide is allowed only for `COMPLETED`, `NO_SHOW` or `CANCELLED` rows and only
+  affects this doctor's queue/history view.
 - All operations are scoped to the doctor's own appointments (`404` otherwise).
 
 Response (`DoctorAppointmentResponse`) includes patient display name, queue

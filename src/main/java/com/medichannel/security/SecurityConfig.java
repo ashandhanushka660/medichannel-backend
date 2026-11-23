@@ -169,6 +169,10 @@ public class SecurityConfig {
                                 HttpMethod.PATCH,
                                 "/api/v1/appointments/*/check-in"
                         ).hasRole("CUSTOMER")
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/api/v1/appointments/*/hide"
+                        ).hasRole("CUSTOMER")
 
                         // Appointment payments. Patients record their own
                         // payment; staff may also record payments.

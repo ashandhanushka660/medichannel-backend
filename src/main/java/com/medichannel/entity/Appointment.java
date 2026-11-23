@@ -141,6 +141,18 @@ public class Appointment {
     @Column(name = "consultation_completed_at")
     private Instant consultationCompletedAt;
 
+    /*
+     * Participant-scoped history visibility. A timestamp means that participant
+     * has cleared the row from their own view. The appointment record itself is
+     * never deleted: payments, consultation summaries, chat and audits still
+     * reference it.
+     */
+    @Column(name = "patient_hidden_at")
+    private Instant patientHiddenAt;
+
+    @Column(name = "doctor_hidden_at")
+    private Instant doctorHiddenAt;
+
     protected Appointment() {
     }
 
@@ -393,6 +405,42 @@ public class Appointment {
         }
 
         status = AppointmentStatus.NO_SHOW;
+    }
+
+    /**
+     * Clear this row from the patient's own history view. Only closed rows can
+     * be hidden; bookings that still affect the queue or consultation access
+     * must remain visible.
+     */
+    public void hideFromPatient(Instant hiddenAt) {
+        ensureHistoryCanBeHidden();
+        if (hiddenAt == null) {
+            throw new IllegalArgumentException("Hidden time is required.");
+        }
+        if (patientHiddenAt == null) {
+            patientHiddenAt = hiddenAt;
+        }
+    }
+
+    /** Clear this row from the assigned doctor's own history view. */
+    public void hideFromDoctor(Instant hiddenAt) {
+        ensureHistoryCanBeHidden();
+        if (hiddenAt == null) {
+            throw new IllegalArgumentException("Hidden time is required.");
+        }
+        if (doctorHiddenAt == null) {
+            doctorHiddenAt = hiddenAt;
+        }
+    }
+
+    private void ensureHistoryCanBeHidden() {
+        if (status != AppointmentStatus.COMPLETED
+                && status != AppointmentStatus.NO_SHOW
+                && status != AppointmentStatus.CANCELLED) {
+            throw new IllegalStateException(
+                    "Only completed or closed appointments can be cleared from history."
+            );
+        }
     }
 
     @PrePersist

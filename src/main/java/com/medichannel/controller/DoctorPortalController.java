@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -152,6 +154,24 @@ public class DoctorPortalController {
         );
     }
 
+    /**
+     * Clear a closed appointment from this doctor's own session history view.
+     * The patient's view and the underlying records are retained.
+     */
+    @PatchMapping("/appointments/{appointmentId}/hide")
+    public ResponseEntity<Void> hideAppointment(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID appointmentId,
+            HttpServletRequest request
+    ) {
+        appointmentService.hideDoctorAppointment(
+                userId(jwt),
+                appointmentId,
+                clientIp(request)
+        );
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/sessions")
     public ResponseEntity<List<DoctorSessionResponse>> getSessions(
             @AuthenticationPrincipal Jwt jwt,
@@ -190,5 +210,13 @@ public class DoctorPortalController {
 
     private UUID userId(Jwt jwt) {
         return UUID.fromString(jwt.getSubject());
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 }

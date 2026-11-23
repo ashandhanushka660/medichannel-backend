@@ -6,6 +6,8 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.UUID;
 
+import jakarta.persistence.EntityManager;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -94,6 +96,9 @@ class AppointmentApiPostgresIntegrationTests {
 
     @Autowired
     private PatientDataProtectionService dataProtectionService;
+
+    @Autowired
+    private EntityManager entityManager;
 
     @Test
     void customerCanBookViewAndCancelOwnAppointment() throws Exception {
@@ -185,6 +190,181 @@ class AppointmentApiPostgresIntegrationTests {
         );
 
         assertThat(appointmentCount).isEqualTo(1);
+    }
+
+    @Test
+    void patientCanClearOwnClosedAppointmentWithoutDeletingTheRecord()
+            throws Exception {
+
+        TestFixture fixture = createFixture();
+
+        String appointmentId = bookAndCancel(fixture, "History clear test");
+
+        mockMvc.perform(
+                get(APPOINTMENTS_URL + "/me")
+                        .with(customerJwt(fixture.patientUserId()))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+
+        mockMvc.perform(
+                patch(APPOINTMENTS_URL + "/" + appointmentId + "/hide")
+                        .with(customerJwt(fixture.patientUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}")
+        )
+                .andExpect(status().isNoContent());
+
+        // Only the patient's list view changes.
+        mockMvc.perform(
+                get(APPOINTMENTS_URL + "/me")
+                        .with(customerJwt(fixture.patientUserId()))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        // Direct access and the underlying appointment still exist.
+        mockMvc.perform(
+                get(APPOINTMENTS_URL + "/" + appointmentId)
+                        .with(customerJwt(fixture.patientUserId()))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+
+        Integer retained = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM appointments
+                WHERE id = ?
+                  AND status = 'CANCELLED'
+                  AND patient_hidden_at IS NOT NULL
+                """,
+                Integer.class,
+                UUID.fromString(appointmentId)
+        );
+        assertThat(retained).isEqualTo(1);
+
+        entityManager.flush();
+        Integer audits = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM audit_logs
+                WHERE action = 'APPOINTMENT_HISTORY_HIDDEN'
+                  AND appointment_id = ?
+                  AND user_id = ?
+                """,
+                Integer.class,
+                UUID.fromString(appointmentId),
+                fixture.patientUserId()
+        );
+        assertThat(audits).isEqualTo(1);
+    }
+
+    @Test
+    void activeAppointmentCannotBeClearedFromHistory() throws Exception {
+
+        TestFixture fixture = createFixture();
+
+        String responseBody = mockMvc.perform(
+                post(APPOINTMENTS_URL)
+                        .with(customerJwt(fixture.patientUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bookingJson(
+                                fixture.sessionId(),
+                                "Active history clear test"
+                        ))
+        )
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String appointmentId = objectMapper.readTree(responseBody)
+                .get("appointmentId")
+                .asText();
+
+        mockMvc.perform(
+                patch(APPOINTMENTS_URL + "/" + appointmentId + "/hide")
+                        .with(customerJwt(fixture.patientUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}")
+        )
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(
+                get(APPOINTMENTS_URL + "/me")
+                        .with(customerJwt(fixture.patientUserId()))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+
+        Integer hidden = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM appointments
+                WHERE id = ? AND patient_hidden_at IS NOT NULL
+                """,
+                Integer.class,
+                UUID.fromString(appointmentId)
+        );
+        assertThat(hidden).isZero();
+    }
+
+    @Test
+    void doctorCanClearOwnClosedAppointmentWithoutAffectingPatientHistory()
+            throws Exception {
+
+        TestFixture fixture = createFixture();
+        UUID doctorUserId = doctorUserId(fixture.sessionId());
+        String appointmentId = bookAndCancel(fixture, "Doctor clear test");
+
+        mockMvc.perform(
+                get("/api/v1/doctor/sessions/"
+                        + fixture.sessionId() + "/queue")
+                        .with(doctorJwt(doctorUserId))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.appointments.length()").value(1))
+                .andExpect(jsonPath("$.appointments[0].appointmentId")
+                        .value(appointmentId));
+
+        mockMvc.perform(
+                patch("/api/v1/doctor/appointments/"
+                        + appointmentId + "/hide")
+                        .with(doctorJwt(doctorUserId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}")
+        )
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(
+                get("/api/v1/doctor/sessions/"
+                        + fixture.sessionId() + "/queue")
+                        .with(doctorJwt(doctorUserId))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.appointments.length()").value(0));
+
+        // The patient did not clear this row, so it remains in their history.
+        mockMvc.perform(
+                get(APPOINTMENTS_URL + "/me")
+                        .with(customerJwt(fixture.patientUserId()))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+
+        Integer visibility = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM appointments
+                WHERE id = ?
+                  AND doctor_hidden_at IS NOT NULL
+                  AND patient_hidden_at IS NULL
+                """,
+                Integer.class,
+                UUID.fromString(appointmentId)
+        );
+        assertThat(visibility).isEqualTo(1);
     }
 
     @Test
@@ -351,6 +531,51 @@ class AppointmentApiPostgresIntegrationTests {
                 .andExpect(status().isUnauthorized());
     }
 
+    private String bookAndCancel(TestFixture fixture, String reason)
+            throws Exception {
+
+        String responseBody = mockMvc.perform(
+                post(APPOINTMENTS_URL)
+                        .with(customerJwt(fixture.patientUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bookingJson(fixture.sessionId(), reason))
+        )
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String appointmentId = objectMapper.readTree(responseBody)
+                .get("appointmentId")
+                .asText();
+
+        mockMvc.perform(
+                patch(APPOINTMENTS_URL + "/" + appointmentId + "/cancel")
+                        .with(customerJwt(fixture.patientUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason": "History visibility test"}
+                                """)
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+
+        return appointmentId;
+    }
+
+    private UUID doctorUserId(UUID sessionId) {
+        return jdbcTemplate.queryForObject(
+                """
+                SELECT d.user_id
+                FROM doctor_sessions s
+                JOIN doctors d ON d.id = s.doctor_id
+                WHERE s.id = ?
+                """,
+                UUID.class,
+                sessionId
+        );
+    }
+
     private TestFixture createFixture() {
 
         String unique = UUID.randomUUID()
@@ -507,6 +732,20 @@ class AppointmentApiPostgresIntegrationTests {
                 )
                 .authorities(
                         new SimpleGrantedAuthority("ROLE_CUSTOMER")
+                );
+    }
+
+    private org.springframework.test.web.servlet.request
+            .RequestPostProcessor doctorJwt(UUID userId) {
+
+        return jwt()
+                .jwt(token -> token
+                        .subject(userId.toString())
+                        .claim("role", "DOCTOR")
+                        .claim("email", "api-doctor@example.test")
+                )
+                .authorities(
+                        new SimpleGrantedAuthority("ROLE_DOCTOR")
                 );
     }
 

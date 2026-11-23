@@ -105,6 +105,8 @@ erDiagram
         timestamptz arrived_at
         timestamptz consultation_started_at
         timestamptz consultation_completed_at
+        timestamptz patient_hidden_at
+        timestamptz doctor_hidden_at
     }
     consultation_summaries {
         uuid id PK

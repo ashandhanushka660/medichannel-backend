@@ -24,6 +24,12 @@ public interface AppointmentRepository
             UUID sessionId
     );
 
+    // Doctor queue view excludes rows the assigned doctor has cleared.
+    List<Appointment>
+            findBySession_IdAndDoctorHiddenAtIsNullOrderByAppointmentNumberAsc(
+                    UUID sessionId
+            );
+
     long countBySession_Id(UUID sessionId);
 
     /**
@@ -83,6 +89,12 @@ public interface AppointmentRepository
             UUID userId
     );
 
+    // Patient history view excludes rows the patient has cleared explicitly.
+    List<Appointment>
+            findAllByPatient_User_IdAndPatientHiddenAtIsNullOrderByCreatedAtDesc(
+                    UUID userId
+            );
+
     // Retrieve one appointment only if it belongs to the given patient.
     Optional<Appointment> findByIdAndPatient_User_Id(
             UUID appointmentId,
@@ -136,7 +148,18 @@ public interface AppointmentRepository
             );
 
     List<Appointment>
+            findAllBySession_Doctor_User_IdAndDoctorHiddenAtIsNullOrderBySession_SessionDateDescSession_StartTimeAsc(
+                    UUID userId
+            );
+
+    List<Appointment>
             findAllBySession_Doctor_User_IdAndSession_SessionDateOrderBySession_StartTimeAsc(
+                    UUID userId,
+                    LocalDate sessionDate
+            );
+
+    List<Appointment>
+            findAllBySession_Doctor_User_IdAndSession_SessionDateAndDoctorHiddenAtIsNullOrderBySession_StartTimeAsc(
                     UUID userId,
                     LocalDate sessionDate
             );
@@ -148,7 +171,20 @@ public interface AppointmentRepository
             );
 
     List<Appointment>
+            findAllBySession_Doctor_User_IdAndStatusAndDoctorHiddenAtIsNullOrderBySession_SessionDateDescSession_StartTimeAsc(
+                    UUID userId,
+                    AppointmentStatus status
+            );
+
+    List<Appointment>
             findAllBySession_Doctor_User_IdAndSession_SessionDateAndStatusOrderBySession_StartTimeAsc(
+                    UUID userId,
+                    LocalDate sessionDate,
+                    AppointmentStatus status
+            );
+
+    List<Appointment>
+            findAllBySession_Doctor_User_IdAndSession_SessionDateAndStatusAndDoctorHiddenAtIsNullOrderBySession_StartTimeAsc(
                     UUID userId,
                     LocalDate sessionDate,
                     AppointmentStatus status
