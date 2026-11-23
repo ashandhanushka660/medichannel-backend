@@ -108,6 +108,26 @@ class QueueRulesIntegrationTests {
     }
 
     @Test
+    void bookingResponseExposesQueuePlaceSlotAndFinishTime() {
+        Fixture fixture = new Fixture("slot");
+        Appointment booked = fixture.book(fixture.patient(1));
+
+        var response = appointmentService
+                .getMyAppointments(fixture.patient(1).getUser().getId())
+                .stream()
+                .filter(item -> item.appointmentId().equals(booked.getId()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(response.appointmentNumber()).isNotNull();
+        assertThat(response.bookedAt()).isNotNull();
+        assertThat(response.estimatedConsultationTime()).isNotNull();
+        assertThat(response.minutesPerPatient()).isEqualTo(10);
+        assertThat(response.estimatedConsultationEndTime())
+                .isEqualTo(response.estimatedConsultationTime().plusMinutes(10));
+    }
+
+    @Test
     void cancellationHandsTheQueuePlaceToTheNextPatient() {
         Fixture fixture = new Fixture("cancel");
         fixture.book(fixture.patient(1));

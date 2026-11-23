@@ -1374,6 +1374,8 @@ public class AppointmentService {
     private AppointmentResponse toResponse(Appointment appointment) {
 
         DoctorSession session = appointment.getSession();
+        LocalDateTime estimatedStart = estimatedConsultationTime(appointment);
+        int slotMinutes = session.getMinutesPerPatient();
 
         return new AppointmentResponse(
                 appointment.getId(),
@@ -1382,7 +1384,9 @@ public class AppointmentService {
                 appointment.getAppointmentNumber(),
                 session.getSessionDate(),
                 session.getStartTime(),
-                estimatedConsultationTime(appointment),
+                estimatedStart,
+                estimatedStart.plusMinutes(slotMinutes),
+                slotMinutes,
                 appointment.getStatus(),
                 appointment.getPaymentStatus(),
                 session.getFeeLkr(),

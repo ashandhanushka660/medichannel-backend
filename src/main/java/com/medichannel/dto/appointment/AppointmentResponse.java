@@ -22,6 +22,8 @@ public record AppointmentResponse(
         LocalDate sessionDate,
         LocalTime sessionStartTime,
         LocalDateTime estimatedConsultationTime,
+        LocalDateTime estimatedConsultationEndTime,
+        int minutesPerPatient,
 
         AppointmentStatus status,
         PaymentStatus paymentStatus,
