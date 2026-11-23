@@ -665,25 +665,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         List<TimeSlot> slots = new ArrayList<>();
 
         if (!isToday) {
-            slots.add(new TimeSlot(
-                    LocalTime.of(9, 0),
-                    LocalTime.of(12, 0),
-                    16,
-                    10
-            ));
-            slots.add(new TimeSlot(
-                    LocalTime.of(14, 0),
-                    LocalTime.of(17, 0),
-                    16,
-                    10
-            ));
-            slots.add(new TimeSlot(
-                    LocalTime.of(18, 0),
-                    LocalTime.of(21, 0),
-                    12,
-                    15
-            ));
-            return slots;
+            return clinicSlots();
         }
 
         LocalDateTime now = LocalDateTime.now(clock);
@@ -708,50 +690,34 @@ public class DemoDataSeeder implements ApplicationRunner {
 
         LocalDateTime end = start.plusMinutes(110);
 
+        slots.addAll(clinicSlots());
+
         LocalTime startTime = start.toLocalTime();
-        LocalTime endTime;
-        if (end.toLocalDate().isAfter(date)) {
-            endTime = LocalTime.of(23, 59);
-        } else {
-            endTime = end.toLocalTime();
+        LocalTime endTime = end.toLocalTime();
+        if (startTime.isBefore(ClinicSchedule.START_TIME)) {
+            startTime = ClinicSchedule.START_TIME;
+        }
+        if (end.toLocalDate().isAfter(date)
+                || endTime.isAfter(ClinicSchedule.END_TIME)) {
+            endTime = ClinicSchedule.END_TIME;
         }
 
-        slots.add(new TimeSlot(
-                LocalTime.of(9, 0),
-                LocalTime.of(12, 0),
-                16,
-                10
-        ));
-        slots.add(new TimeSlot(
-                LocalTime.of(14, 0),
-                LocalTime.of(17, 0),
-                16,
-                10
-        ));
-        slots.add(new TimeSlot(
-                LocalTime.of(18, 0),
-                LocalTime.of(21, 0),
-                12,
-                15
-        ));
-
         if (!start.toLocalDate().isAfter(date)
-                && startTime.isBefore(endTime)
-                && startTime.isAfter(LocalTime.of(6, 0))) {
+                && startTime.isBefore(endTime)) {
             long availableMinutes = java.time.Duration
                     .between(startTime, endTime)
                     .toMinutes();
-            int maxAppointments = (int) Math.max(
-                    1,
-                    availableMinutes / 15
-            );
+            int maxAppointments = (int) (availableMinutes
+                    / ClinicSchedule.MINUTES_PER_PATIENT);
 
-            slots.add(new TimeSlot(
-                    startTime,
-                    endTime,
-                    maxAppointments,
-                    15
-            ));
+            if (maxAppointments > 0) {
+                slots.add(new TimeSlot(
+                        startTime,
+                        endTime,
+                        maxAppointments,
+                        ClinicSchedule.MINUTES_PER_PATIENT
+                ));
+            }
         }
 
         // Today's fixed slots may already be in the past; the booking
@@ -759,6 +725,29 @@ public class DemoDataSeeder implements ApplicationRunner {
         LocalDateTime earliestBookable = now.plusMinutes(75);
         slots.removeIf(slot -> date.atTime(slot.start())
                 .isBefore(earliestBookable));
+
+        return slots;
+    }
+
+    /**
+     * The published clinic day is split into three bookable blocks. Every
+     * block uses the advertised 10-minute patient slot so the guest roster,
+     * patient booking feed and live queue all agree.
+     */
+    private List<TimeSlot> clinicSlots() {
+        LocalTime start = ClinicSchedule.START_TIME;
+        List<TimeSlot> slots = new ArrayList<>();
+
+        for (int block = 0; block < 3; block += 1) {
+            LocalTime end = start.plusHours(3);
+            slots.add(new TimeSlot(
+                    start,
+                    end,
+                    16,
+                    ClinicSchedule.MINUTES_PER_PATIENT
+            ));
+            start = end;
+        }
 
         return slots;
     }

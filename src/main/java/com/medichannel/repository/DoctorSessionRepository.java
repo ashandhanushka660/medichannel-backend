@@ -65,8 +65,9 @@ public interface DoctorSessionRepository
             UUID userId
     );
 
-    // Publicly discoverable sessions must be open, in the future,
-    // have remaining capacity, and belong to an eligible doctor.
+    // Publicly discoverable sessions must be open, in the future, inside the
+    // published clinic day with one 10-minute slot per patient, have remaining
+    // capacity, and belong to an available, eligible doctor.
     @Query("""
             SELECT s
             FROM DoctorSession s
@@ -92,6 +93,9 @@ public interface DoctorSessionRepository
                     )
               )
               AND s.lastAppointmentNumber < s.maxAppointments
+              AND s.startTime >= :clinicStart
+              AND s.endTime <= :clinicEnd
+              AND s.minutesPerPatient = :slotMinutes
               AND d.available = true
               AND sp.active = true
               AND u.accountStatus = 'ACTIVE'
@@ -117,6 +121,9 @@ public interface DoctorSessionRepository
             @Param("specialisationId") UUID specialisationId,
             @Param("sessionDate") String sessionDate,
             @Param("q") String q,
-            @Param("consultationType") ConsultationType consultationType
+            @Param("consultationType") ConsultationType consultationType,
+            @Param("clinicStart") LocalTime clinicStart,
+            @Param("clinicEnd") LocalTime clinicEnd,
+            @Param("slotMinutes") int slotMinutes
     );
 }

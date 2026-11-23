@@ -12,6 +12,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.medichannel.config.ClinicSchedule;
 import com.medichannel.config.TimeConfiguration;
 import com.medichannel.dto.admin.AdminAppointmentResponse;
 import com.medichannel.dto.appointment.AppointmentBookingRequest;
@@ -107,7 +108,7 @@ public class AppointmentService {
     ) {
         Patient patient = getEligiblePatient(authenticatedUserId);
 
-        DoctorSession session = findBookableSession(request.sessionId());
+        DoctorSession session = findBookableSession(request.sessionId(), true);
         return createAppointment(session, patient, request.reason());
     }
 
@@ -146,18 +147,23 @@ public class AppointmentService {
                 phone
         );
 
-        DoctorSession session = findBookableSession(request.sessionId());
+        // Reception walk-ins are allowed even for a staff-created session
+        // outside the published clinic window; patient self-booking is not.
+        DoctorSession session = findBookableSession(request.sessionId(), false);
         return createAppointment(session, patient, request.reason());
     }
 
-    private DoctorSession findBookableSession(UUID sessionId) {
+    private DoctorSession findBookableSession(
+            UUID sessionId,
+            boolean enforcePublishedSchedule
+    ) {
         DoctorSession session = doctorSessionRepository
                 .findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Consultation session was not found."
                 ));
 
-        validateSessionCanBeBooked(session);
+        validateSessionCanBeBooked(session, enforcePublishedSchedule);
         return session;
     }
 
@@ -1193,11 +1199,27 @@ public class AppointmentService {
                 ));
     }
 
-    private void validateSessionCanBeBooked(DoctorSession session) {
+    private void validateSessionCanBeBooked(
+            DoctorSession session,
+            boolean enforcePublishedSchedule
+    ) {
 
         if (session.getStatus() != SessionStatus.OPEN) {
             throw new ConflictException(
                     "This consultation session is not accepting bookings."
+            );
+        }
+
+        if (enforcePublishedSchedule && !session.getDoctor().isAvailable()) {
+            throw new ConflictException(
+                    "This doctor is not currently accepting bookings."
+            );
+        }
+
+        if (enforcePublishedSchedule && !ClinicSchedule.isBookableSession(session)) {
+            throw new ConflictException(
+                    "This session is outside the published 07:00–16:00 clinic hours "
+                            + "or does not use 10-minute patient slots."
             );
         }
 

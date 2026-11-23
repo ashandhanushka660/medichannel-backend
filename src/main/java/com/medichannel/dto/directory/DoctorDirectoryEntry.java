@@ -28,11 +28,11 @@ public record DoctorDirectoryEntry(
         String roomNumber,
         String roomName,
 
-        // The hospital's default eight-hour clinic day. A session may
-        // override these times for a particular date.
+        // The published hospital clinic day and patient slot length.
         LocalTime defaultStartTime,
         LocalTime defaultEndTime,
         int defaultHours,
+        int minutesPerPatient,
 
         UUID sessionId,
         LocalDate sessionDate,

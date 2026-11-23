@@ -15,6 +15,7 @@ public record DoctorSessionResponse(
 
         UUID doctorId,
         String doctorName,
+        boolean doctorAvailable,
         String specialisation,
 
         UUID roomId,

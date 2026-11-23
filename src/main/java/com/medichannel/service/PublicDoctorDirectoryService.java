@@ -2,7 +2,6 @@ package com.medichannel.service;
 
 import java.time.Clock;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -11,6 +10,7 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.medichannel.config.ClinicSchedule;
 import com.medichannel.dto.directory.DoctorDirectoryEntry;
 import com.medichannel.dto.queue.SessionQueueSummary;
 import com.medichannel.entity.Doctor;
@@ -23,16 +23,13 @@ import com.medichannel.repository.DoctorSessionRepository;
 /**
  * Public roster shown on the guest dashboard before a patient signs in.
  *
- * The hospital's default clinic day is 07:00-16:00 (eight hours). A published
- * session can override those times for a specific date; when no session is
- * live, the default hours are still displayed so visitors can plan a visit.
+ * Every doctor is advertised with the hospital clinic day of 07:00-16:00 and
+ * 10-minute patient slots. Only sessions that fit that window are used for
+ * room, consultation mode and live queue details, so the guest dashboard and
+ * the patient booking dashboard always show congruent information.
  */
 @Service
 public class PublicDoctorDirectoryService {
-
-    public static final LocalTime DEFAULT_START_TIME = LocalTime.of(7, 0);
-    public static final LocalTime DEFAULT_END_TIME = LocalTime.of(16, 0);
-    public static final int DEFAULT_HOURS = 8;
 
     private static final Map<SessionStatus, Integer> ACTIVE_PRIORITY =
             Map.of(
@@ -90,6 +87,7 @@ public class PublicDoctorDirectoryService {
         DoctorSession activeSession = todaySessions.stream()
                 .filter((session) ->
                         ACTIVE_PRIORITY.containsKey(session.getStatus())
+                                && ClinicSchedule.isBookableSession(session)
                 )
                 .min(ACTIVE_SESSION_ORDER)
                 .orElse(null);
@@ -108,6 +106,7 @@ public class PublicDoctorDirectoryService {
             sessionForDetails = candidates.stream()
                     .filter((session) ->
                             ACTIVE_PRIORITY.containsKey(session.getStatus())
+                                    && ClinicSchedule.isBookableSession(session)
                     )
                     .min(UPCOMING_SESSION_ORDER)
                     .orElse(null);
@@ -134,9 +133,10 @@ public class PublicDoctorDirectoryService {
                 doctor.isAvailable(),
                 room == null ? null : room.getRoomNumber(),
                 room == null ? null : room.getName(),
-                DEFAULT_START_TIME,
-                DEFAULT_END_TIME,
-                DEFAULT_HOURS,
+                ClinicSchedule.START_TIME,
+                ClinicSchedule.END_TIME,
+                ClinicSchedule.HOURS,
+                ClinicSchedule.MINUTES_PER_PATIENT,
                 activeSession == null ? null : activeSession.getId(),
                 activeSession == null ? null : activeSession.getSessionDate(),
                 activeSession == null ? null : activeSession.getStartTime(),

@@ -201,6 +201,7 @@ class PublicDoctorDirectoryIntegrationTests {
         assertThat(live.get("defaultStartTime").asText()).isEqualTo("07:00:00");
         assertThat(live.get("defaultEndTime").asText()).isEqualTo("16:00:00");
         assertThat(live.get("defaultHours").asInt()).isEqualTo(8);
+        assertThat(live.get("minutesPerPatient").asInt()).isEqualTo(10);
         assertThat(live.get("consultationType").asText()).isEqualTo("PHYSICAL");
         assertThat(live.get("sessionStatus").asText()).isEqualTo("IN_PROGRESS");
         assertThat(live.get("nowServing").asInt())

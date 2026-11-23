@@ -15,6 +15,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.medichannel.config.ClinicSchedule;
 import com.medichannel.dto.session.DoctorSessionRequest;
 import com.medichannel.dto.session.DoctorSessionResponse;
 import com.medichannel.entity.Appointment;
@@ -439,7 +440,10 @@ public class DoctorSessionService {
                 specialisationId,
                 sessionDate == null ? null : sessionDate.toString(),
                 query == null || query.isEmpty() ? null : query,
-                consultationType
+                consultationType,
+                ClinicSchedule.START_TIME,
+                ClinicSchedule.END_TIME,
+                ClinicSchedule.MINUTES_PER_PATIENT
         ).stream().map(this::toResponse).toList();
     }
 
@@ -620,6 +624,7 @@ public class DoctorSessionService {
                 session.getId(),
                 doctor.getId(),
                 doctor.getFirstName() + " " + doctor.getLastName(),
+                doctor.isAvailable(),
                 doctor.getSpecialisation().getName(),
                 room != null ? room.getId() : null,
                 room != null ? room.getRoomNumber() : null,
