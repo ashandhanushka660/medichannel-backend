@@ -78,4 +78,21 @@ public interface DoctorRepository extends JpaRepository<Doctor, UUID> {
     Optional<Doctor> findPublicDoctorById(
             @Param("doctorId") UUID doctorId
     );
+
+    /**
+     * Guest directory: show both available and unavailable doctors so a
+     * visitor can see the full hospital roster. Account and specialisation
+     * eligibility still apply; no patient data is ever joined here.
+     */
+    @Query("""
+            SELECT d
+            FROM Doctor d
+            JOIN FETCH d.specialisation s
+            JOIN FETCH d.user u
+            WHERE s.active = true
+              AND u.accountStatus = 'ACTIVE'
+              AND u.emailVerified = true
+            ORDER BY d.available DESC, d.firstName, d.lastName
+            """)
+    List<Doctor> findPublicDirectoryIncludingUnavailable();
 }

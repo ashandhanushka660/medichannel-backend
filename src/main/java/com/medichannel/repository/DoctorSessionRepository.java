@@ -30,6 +30,12 @@ public interface DoctorSessionRepository
 
     List<DoctorSession> findByDoctor_Id(UUID doctorId);
 
+    List<DoctorSession>
+            findByDoctor_IdAndSessionDateGreaterThanEqualOrderBySessionDateAscStartTimeAsc(
+                    UUID doctorId,
+                    LocalDate from
+            );
+
     void deleteByDoctor_Id(UUID doctorId);
 
     List<DoctorSession> findBySessionDateAndStatus(

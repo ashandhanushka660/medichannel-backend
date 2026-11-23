@@ -293,6 +293,12 @@ public class SecurityConfig {
                                 "/api/v1/doctors/**"
                         ).permitAll()
 
+                        // Guest dashboard roster with live queue numbers.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/public/**"
+                        ).permitAll()
+
                         // Public active specialisations.
                         .requestMatchers(
                                 HttpMethod.GET,
