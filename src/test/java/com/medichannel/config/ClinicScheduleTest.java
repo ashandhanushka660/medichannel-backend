@@ -37,4 +37,42 @@ class ClinicScheduleTest {
                 ConsultationType.PHYSICAL
         )).isEqualTo(LocalTime.MAX);
     }
+
+    @Test
+    void onlyTheTwoPublishedWindowsAreAllowed() {
+        assertThat(ClinicSchedule.isAllowedWindow(
+                LocalTime.of(7, 0),
+                LocalTime.of(9, 30)
+        )).isTrue();
+        assertThat(ClinicSchedule.isAllowedWindow(
+                LocalTime.of(12, 0),
+                LocalTime.of(14, 30)
+        )).isTrue();
+        assertThat(ClinicSchedule.isAllowedWindow(
+                LocalTime.of(7, 0),
+                LocalTime.of(16, 0)
+        )).isFalse();
+        assertThat(ClinicSchedule.isAllowedWindow(
+                LocalTime.of(9, 30),
+                LocalTime.of(12, 0)
+        )).isFalse();
+    }
+
+    @Test
+    void periodFiltersEndAtThePublishedSessionEnd() {
+        assertThat(ClinicSchedule.periodEnd(null))
+                .isEqualTo(LocalTime.of(23, 59, 59));
+        assertThat(ClinicSchedule.periodEnd(LocalTime.of(7, 0)))
+                .isEqualTo(LocalTime.of(9, 30));
+        assertThat(ClinicSchedule.periodEnd(LocalTime.of(12, 0)))
+                .isEqualTo(LocalTime.of(14, 30));
+    }
+
+    @Test
+    void dailyCapacityIsTwoSessionsOfThirtyPatients() {
+        assertThat(ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION).isEqualTo(30);
+        assertThat(ClinicSchedule.MAX_APPOINTMENTS_PER_DAY).isEqualTo(60);
+        assertThat(ClinicSchedule.MINUTES_PER_PATIENT).isEqualTo(5);
+        assertThat(ClinicSchedule.MAX_SLOT_MINUTES).isEqualTo(5);
+    }
 }

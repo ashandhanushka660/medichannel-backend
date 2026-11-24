@@ -809,11 +809,9 @@ public class DemoDataSeeder implements ApplicationRunner {
     }
 
     /**
-     * Forty available doctors each receive three sessions per published week
-     * for 26 weeks. The first 20 publish on offsets 0/2/4 and the rest on
-     * 1/3/5, so every scheduled day has exactly 20 sessions and each week has
-     * 120. Each session covers the published clinic day with a five-minute
-     * default slot; the session service enforces 5–30 minutes.
+     * Forty available doctors each receive two published sessions on each of
+     * three days per week for 26 weeks: 07:00–09:30 and 12:00–14:30, with 30
+     * places and five-minute slots each, giving 60 places per doctor/day.
      */
     private void seedSessions(List<Doctor> doctors, List<Room> rooms) {
         LocalDate firstDate = LocalDate.now(clock);
@@ -837,42 +835,71 @@ public class DemoDataSeeder implements ApplicationRunner {
                 int[] dayOffsets = doctorIndex < DOCTORS_PER_DAY
                         ? MON_WED_FRI
                         : TUE_THU_SAT;
+                List<LocalTime[]> windows = List.of(
+                        new LocalTime[] {
+                                ClinicSchedule.MORNING_START,
+                                ClinicSchedule.MORNING_END
+                        },
+                        new LocalTime[] {
+                                ClinicSchedule.AFTERNOON_START,
+                                ClinicSchedule.AFTERNOON_END
+                        }
+                );
+
                 for (int dayOffset : dayOffsets) {
                     LocalDate date = firstDate.plusDays(
                             week * 7L + dayOffset
                     );
 
-                    if (!doctorSessionRepository
-                            .findByDoctorIdAndSessionDateAndStatus(
-                                    doctor.getId(),
-                                    date,
-                                    SessionStatus.OPEN
-                            ).isEmpty()) {
-                        continue;
+                    for (LocalTime[] window : windows) {
+                        LocalTime startTime = window[0];
+                        LocalTime endTime = window[1];
+
+                        boolean alreadyPublished = doctorSessionRepository
+                                .findByDoctorIdAndSessionDateAndStatus(
+                                        doctor.getId(),
+                                        date,
+                                        SessionStatus.OPEN
+                                )
+                                .stream()
+                                .anyMatch(session ->
+                                        startTime.equals(session.getStartTime())
+                                                && endTime.equals(
+                                                        session.getEndTime()
+                                                )
+                                );
+                        if (alreadyPublished) {
+                            continue;
+                        }
+
+                        Room room = consultationRooms.stream()
+                                .filter(candidate -> isRoomAvailable(
+                                        candidate,
+                                        date,
+                                        startTime,
+                                        endTime
+                                ))
+                                .findFirst()
+                                .orElse(null);
+                        boolean online = room == null;
+
+                        doctorSessionService.createSession(
+                                new DoctorSessionRequest(
+                                        doctor.getId(),
+                                        online ? null : room.getId(),
+                                        date,
+                                        startTime,
+                                        endTime,
+                                        online
+                                                ? ConsultationType.ONLINE
+                                                : ConsultationType.PHYSICAL,
+                                        ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
+                                        ClinicSchedule.MINUTES_PER_PATIENT,
+                                        FEES[doctorIndex % FEES.length]
+                                )
+                        );
+                        sessionsCreated += 1;
                     }
-
-                    Room room = consultationRooms.stream()
-                            .filter(candidate -> isRoomAvailable(candidate, date))
-                            .findFirst()
-                            .orElse(null);
-                    boolean online = room == null;
-
-                    doctorSessionService.createSession(
-                            new DoctorSessionRequest(
-                                    doctor.getId(),
-                                    online ? null : room.getId(),
-                                    date,
-                                    ClinicSchedule.START_TIME,
-                                    ClinicSchedule.END_TIME,
-                                    online
-                                            ? ConsultationType.ONLINE
-                                            : ConsultationType.PHYSICAL,
-                                    ClinicSchedule.MAX_APPOINTMENTS_PER_DAY,
-                                    ClinicSchedule.MINUTES_PER_PATIENT,
-                                    FEES[doctorIndex % FEES.length]
-                            )
-                    );
-                    sessionsCreated += 1;
                 }
 
                 doctorIndex += 1;
@@ -887,16 +914,19 @@ public class DemoDataSeeder implements ApplicationRunner {
         );
     }
 
-    private boolean isRoomAvailable(Room room, LocalDate date) {
+    private boolean isRoomAvailable(
+            Room room,
+            LocalDate date,
+            LocalTime startTime,
+            LocalTime endTime
+    ) {
         return doctorSessionRepository
                 .findByRoom_IdAndSessionDate(room.getId(), date)
                 .stream()
                 .noneMatch(session ->
                         session.getStatus() != SessionStatus.CANCELLED
-                                && session.getStartTime()
-                                        .isBefore(ClinicSchedule.END_TIME)
-                                && session.getEndTime()
-                                        .isAfter(ClinicSchedule.START_TIME)
+                                && session.getStartTime().isBefore(endTime)
+                                && session.getEndTime().isAfter(startTime)
                 );
     }
 

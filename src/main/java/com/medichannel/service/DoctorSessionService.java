@@ -106,6 +106,12 @@ public class DoctorSessionService {
             DoctorSessionRequest request
     ) {
         validateRequest(request);
+        validateDailyCapacity(
+                request.doctorId(),
+                request.sessionDate(),
+                request.maxAppointments(),
+                null
+        );
 
         Doctor doctor = doctorRepository
                 .findPublicDoctorById(request.doctorId())
@@ -199,6 +205,13 @@ public class DoctorSessionService {
                     "Maximum appointments cannot be lower than the number already booked."
             );
         }
+
+        validateDailyCapacity(
+                request.doctorId(),
+                request.sessionDate(),
+                request.maxAppointments(),
+                sessionId
+        );
 
         Doctor doctor = doctorRepository
                 .findPublicDoctorById(request.doctorId())
@@ -457,10 +470,10 @@ public class DoctorSessionService {
         String query = doctorName == null
                 ? null
                 : doctorName.trim().toLowerCase(Locale.ROOT);
-        LocalTime periodStart = period == null ? LocalTime.MIDNIGHT : period;
-        LocalTime periodEnd = period == null
-                ? LocalTime.of(23, 59, 59)
-                : period.plusHours(1);
+        LocalTime periodStart = period == null
+                ? LocalTime.MIDNIGHT
+                : period;
+        LocalTime periodEnd = ClinicSchedule.periodEnd(period);
 
         return doctorSessionRepository.findPublicOpenSessions(
                 SessionStatus.OPEN,
@@ -481,18 +494,22 @@ public class DoctorSessionService {
                 toDate == null ? null : toDate.toString(),
                 query == null || query.isEmpty() ? null : query,
                 consultationType,
-                ClinicSchedule.START_TIME,
-                ClinicSchedule.END_TIME,
-                ClinicSchedule.MIN_SLOT_MINUTES,
-                ClinicSchedule.MAX_SLOT_MINUTES,
-                periodStart,
-                periodEnd,
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
+                ClinicSchedule.AFTERNOON_START,
+                ClinicSchedule.AFTERNOON_END,
+                ClinicSchedule.MINUTES_PER_PATIENT,
+                ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
                 List.of(
                         AppointmentStatus.BOOKED,
                         AppointmentStatus.ARRIVED,
                         AppointmentStatus.IN_CONSULTATION
                 )
-        ).stream().map(this::toResponse).toList();
+        ).stream()
+                .filter(session -> session.getStartTime().isBefore(periodEnd)
+                        && session.getEndTime().isAfter(periodStart))
+                .map(this::toResponse)
+                .toList();
     }
 
     // Get the details of one session.
@@ -557,6 +574,30 @@ public class DoctorSessionService {
         }
     }
 
+    private void validateDailyCapacity(
+            UUID doctorId,
+            LocalDate sessionDate,
+            int requestedMaxAppointments,
+            UUID excludedSessionId
+    ) {
+        long alreadyScheduled = doctorSessionRepository
+                .sumActiveMaxAppointmentsByDoctorAndDate(
+                        doctorId,
+                        sessionDate,
+                        SessionStatus.CANCELLED,
+                        excludedSessionId
+                );
+
+        if (alreadyScheduled + requestedMaxAppointments
+                > ClinicSchedule.MAX_APPOINTMENTS_PER_DAY) {
+            throw new ConflictException(
+                    "Adding this session would exceed the daily limit of "
+                            + ClinicSchedule.MAX_APPOINTMENTS_PER_DAY
+                            + " patients for this doctor."
+            );
+        }
+    }
+
     private void validateRequest(DoctorSessionRequest request) {
 
         if (request == null) {
@@ -582,17 +623,20 @@ public class DoctorSessionService {
             );
         }
 
-        if (!request.startTime().equals(ClinicSchedule.START_TIME)
-                || !request.endTime().equals(ClinicSchedule.END_TIME)) {
+        if (!ClinicSchedule.isAllowedWindow(
+                request.startTime(),
+                request.endTime()
+        )) {
             throw new IllegalArgumentException(
-                    "Sessions must cover the published clinic day, 07:00–16:00."
+                    "Sessions must use one of the published windows: "
+                            + ClinicSchedule.allowedWindowLabel() + "."
             );
         }
 
-        if (request.minutesPerPatient() < ClinicSchedule.MIN_SLOT_MINUTES
-                || request.minutesPerPatient() > ClinicSchedule.MAX_SLOT_MINUTES) {
+        if (request.minutesPerPatient() != ClinicSchedule.MINUTES_PER_PATIENT) {
             throw new IllegalArgumentException(
-                    "Each patient must be allocated between 5 and 30 minutes."
+                    "Each patient must be allocated exactly "
+                            + ClinicSchedule.MINUTES_PER_PATIENT + " minutes."
             );
         }
 
@@ -608,10 +652,11 @@ public class DoctorSessionService {
         }
 
         if (request.maxAppointments() < 1
-                || request.maxAppointments() > ClinicSchedule.MAX_APPOINTMENTS_PER_DAY) {
+                || request.maxAppointments() > ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION) {
             throw new IllegalArgumentException(
                     "Maximum appointments must be between 1 and "
-                            + ClinicSchedule.MAX_APPOINTMENTS_PER_DAY + "."
+                            + ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION
+                            + " per session."
             );
         }
 

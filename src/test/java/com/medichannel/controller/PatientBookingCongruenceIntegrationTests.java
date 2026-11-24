@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import com.medichannel.config.ClinicSchedule;
 import com.medichannel.entity.Appointment;
 import com.medichannel.entity.Doctor;
 import com.medichannel.entity.DoctorSession;
@@ -49,7 +50,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * The patient booking feed must match the availability advertised on the
- * guest dashboard: 07:00-16:00, 5-minute patient slots, available doctors
+ * guest dashboard: the two published windows, five-minute slots, available doctors
  * only. Booking then gives the patient the next number in that session's
  * queue and appears in "My appointments" as before.
  */
@@ -138,8 +139,8 @@ class PatientBookingCongruenceIntegrationTests {
         DoctorSession eligible = createSession(
                 availableDoctor,
                 date,
-                LocalTime.of(7, 0),
-                LocalTime.of(16, 0),
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
                 5
         );
         DoctorSession outsideHours = createSession(
@@ -159,9 +160,9 @@ class PatientBookingCongruenceIntegrationTests {
         DoctorSession unavailableDoctorSession = createSession(
                 unavailableDoctor,
                 date.plusDays(3),
-                LocalTime.of(9, 0),
-                LocalTime.of(12, 0),
-                10
+                ClinicSchedule.AFTERNOON_START,
+                ClinicSchedule.AFTERNOON_END,
+                5
         );
 
         User patientUser = new User(
@@ -310,20 +311,20 @@ class PatientBookingCongruenceIntegrationTests {
         DoctorSession morning = createSession(
                 doctor,
                 date,
-                LocalTime.of(7, 0),
-                LocalTime.of(10, 0),
-                10
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
+                5
         );
         DoctorSession afternoon = createSession(
                 doctor,
                 date,
-                LocalTime.of(13, 0),
-                LocalTime.of(16, 0),
-                10
+                ClinicSchedule.AFTERNOON_START,
+                ClinicSchedule.AFTERNOON_END,
+                5
         );
 
         JsonNode morningResults = objectMapper.readTree(
-                mockMvc.perform(get("/api/v1/sessions").param("period", "08:00"))
+                mockMvc.perform(get("/api/v1/sessions").param("period", "07:00"))
                         .andExpect(status().isOk())
                         .andReturn()
                         .getResponse()
@@ -334,7 +335,7 @@ class PatientBookingCongruenceIntegrationTests {
                 .doesNotContain(afternoon.getId().toString());
 
         JsonNode afternoonResults = objectMapper.readTree(
-                mockMvc.perform(get("/api/v1/sessions").param("period", "14:00"))
+                mockMvc.perform(get("/api/v1/sessions").param("period", "12:00"))
                         .andExpect(status().isOk())
                         .andReturn()
                         .getResponse()
@@ -344,14 +345,14 @@ class PatientBookingCongruenceIntegrationTests {
                 .contains(afternoon.getId().toString())
                 .doesNotContain(morning.getId().toString());
 
-        JsonNode boundaryResults = objectMapper.readTree(
-                mockMvc.perform(get("/api/v1/sessions").param("period", "10:00"))
+        JsonNode lunchGapResults = objectMapper.readTree(
+                mockMvc.perform(get("/api/v1/sessions").param("period", "09:30"))
                         .andExpect(status().isOk())
                         .andReturn()
                         .getResponse()
                         .getContentAsString()
         );
-        assertThat(sessionIds(boundaryResults))
+        assertThat(sessionIds(lunchGapResults))
                 .doesNotContain(
                         morning.getId().toString(),
                         afternoon.getId().toString()
@@ -368,35 +369,63 @@ class PatientBookingCongruenceIntegrationTests {
                         "Temporary booking deadline test"
                 )
         );
-        Doctor doctor = createDoctor(
-                doctorRole,
-                specialisation,
-                "Deadline",
-                "Doctor",
-                "DL-" + unique,
-                unique
+        Doctor physicalSoonDoctor = createDoctor(
+                doctorRole, specialisation, "Physical Soon", "Doctor",
+                "DL-PS-" + unique, unique
+        );
+        Doctor physicalBookableDoctor = createDoctor(
+                doctorRole, specialisation, "Physical Open", "Doctor",
+                "DL-PO-" + unique, unique
+        );
+        Doctor onlineSoonDoctor = createDoctor(
+                doctorRole, specialisation, "Online Soon", "Doctor",
+                "DL-OS-" + unique, unique
+        );
+        Doctor onlineBookableDoctor = createDoctor(
+                doctorRole, specialisation, "Online Open", "Doctor",
+                "DL-OO-" + unique, unique
         );
 
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Colombo"));
         DoctorSession physicalTooSoon = createSession(
-                doctor, today, LocalTime.of(8, 30), LocalTime.of(10, 0), 5,
+                physicalSoonDoctor,
+                today,
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
+                5,
                 ConsultationType.PHYSICAL
         );
         DoctorSession physicalBookable = createSession(
-                doctor, today, LocalTime.of(10, 0), LocalTime.of(11, 0), 5,
+                physicalBookableDoctor,
+                today,
+                ClinicSchedule.AFTERNOON_START,
+                ClinicSchedule.AFTERNOON_END,
+                5,
                 ConsultationType.PHYSICAL
         );
         DoctorSession onlineTooSoon = createSession(
-                doctor, today, LocalTime.of(11, 0), LocalTime.of(12, 0), 5,
+                onlineSoonDoctor,
+                today,
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
+                5,
                 ConsultationType.ONLINE
         );
         DoctorSession onlineBookable = createSession(
-                doctor, today, LocalTime.of(12, 0), LocalTime.of(13, 0), 5,
+                onlineBookableDoctor,
+                today,
+                ClinicSchedule.AFTERNOON_START,
+                ClinicSchedule.AFTERNOON_END,
+                5,
                 ConsultationType.ONLINE
         );
         DoctorSession tomorrow = createSession(
-                doctor, today.plusDays(1), LocalTime.of(7, 0),
-                LocalTime.of(16, 0), 5, ConsultationType.ONLINE
+                physicalSoonDoctor,
+                today.plusDays(1),
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
+                5,
+                ConsultationType.ONLINE
         );
 
         List<UUID> ids = doctorSessionRepository.findPublicOpenSessions(
@@ -404,7 +433,7 @@ class PatientBookingCongruenceIntegrationTests {
                 today,
                 ConsultationType.PHYSICAL,
                 LocalTime.of(9, 30),
-                LocalTime.of(11, 30),
+                LocalTime.of(11, 0),
                 null,
                 null,
                 null,
@@ -412,12 +441,12 @@ class PatientBookingCongruenceIntegrationTests {
                 null,
                 null,
                 null,
-                LocalTime.of(7, 0),
-                LocalTime.of(16, 0),
-                5,
-                30,
-                LocalTime.MIDNIGHT,
-                LocalTime.of(23, 59, 59),
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
+                ClinicSchedule.AFTERNOON_START,
+                ClinicSchedule.AFTERNOON_END,
+                ClinicSchedule.MINUTES_PER_PATIENT,
+                ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
                 List.of(
                         AppointmentStatus.BOOKED,
                         AppointmentStatus.ARRIVED,

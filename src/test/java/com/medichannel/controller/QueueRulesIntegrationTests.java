@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -26,6 +27,7 @@ import com.medichannel.entity.Specialisation;
 import com.medichannel.entity.User;
 import com.medichannel.enums.ConsultationType;
 import com.medichannel.enums.SessionStatus;
+import com.medichannel.exception.ConflictException;
 import com.medichannel.repository.AppointmentRepository;
 import com.medichannel.repository.DoctorRepository;
 import com.medichannel.repository.DoctorSessionRepository;
@@ -43,8 +45,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Practical queue behaviour: a delay affects the delayed booking and everyone
  * behind it, a cancellation hands its place to the next patient, and no role
- * can cancel without recording a reason. Sessions always use the published
- * 07:00-16:00 clinic day with 5-minute default slots.
+ * can cancel without recording a reason. Sessions always use one of the two
+ * published daily windows with five-minute slots.
  */
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:postgresql://127.0.0.1:55432/medichannel_test",
@@ -170,6 +172,57 @@ class QueueRulesIntegrationTests {
     }
 
     @Test
+    void estimatesUseEachSessionsOwnStartAndSkipTheLunchGap() {
+        Fixture fixture = new Fixture("estimates");
+        LocalDate date = fixture.session.getSessionDate();
+
+        List<Appointment> morning = new java.util.ArrayList<>();
+        for (int number = 1; number <= 30; number += 1) {
+            morning.add(fixture.book(fixture.patient(number)));
+        }
+
+        var afternoon = doctorSessionService.createSession(
+                sessionRequest(
+                        fixture,
+                        date,
+                        ClinicSchedule.AFTERNOON_START,
+                        ClinicSchedule.AFTERNOON_END,
+                        ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
+                        ClinicSchedule.MINUTES_PER_PATIENT
+                )
+        );
+        Appointment firstAfternoon = appointmentRepository.saveAndFlush(
+                new Appointment(
+                        doctorSessionRepository.findById(afternoon.sessionId())
+                                .orElseThrow(),
+                        fixture.patient(31),
+                        dataProtectionService.encrypt("Afternoon review")
+                )
+        );
+
+        assertThat(estimateFor(fixture.patient(1), morning.get(0)))
+                .isEqualTo(LocalDateTime.of(date, LocalTime.of(7, 0)));
+        assertThat(estimateFor(fixture.patient(30), morning.get(29)))
+                .isEqualTo(LocalDateTime.of(date, LocalTime.of(9, 25)));
+        assertThat(estimateFor(fixture.patient(31), firstAfternoon))
+                .isEqualTo(LocalDateTime.of(date, LocalTime.of(12, 0)));
+
+        appointmentService.delayAppointmentQueue(
+                fixture.managerId,
+                "MANAGER",
+                morning.get(0).getId(),
+                20
+        );
+
+        assertThat(estimateFor(fixture.patient(1), morning.get(0)))
+                .isEqualTo(LocalDateTime.of(date, LocalTime.of(7, 20)));
+        assertThat(estimateFor(fixture.patient(30), morning.get(29)))
+                .isEqualTo(LocalDateTime.of(date, LocalTime.of(9, 45)));
+        assertThat(estimateFor(fixture.patient(31), firstAfternoon))
+                .isEqualTo(LocalDateTime.of(date, LocalTime.of(12, 0)));
+    }
+
+    @Test
     void everyCancellationRoleRequiresAReason() {
         Fixture fixture = new Fixture("reason");
         Appointment managerTarget = fixture.book(fixture.patient(1));
@@ -192,7 +245,7 @@ class QueueRulesIntegrationTests {
     }
 
     @Test
-    void sessionsMustCoverThePublishedClinicDayWithConfigurableSlots() {
+    void sessionsMustUseOneOfThePublishedWindows() {
         Fixture fixture = new Fixture("schedule");
 
         assertThatThrownBy(() -> doctorSessionService.createSession(
@@ -200,52 +253,86 @@ class QueueRulesIntegrationTests {
                         fixture.doctor.getId(),
                         null,
                         LocalDate.now(ZoneId.of("Asia/Colombo")).plusDays(40),
-                        LocalTime.of(9, 0),
-                        LocalTime.of(12, 0),
+                        LocalTime.of(7, 0),
+                        LocalTime.of(16, 0),
                         ConsultationType.ONLINE,
-                        18,
-                        10,
+                        30,
+                        5,
                         new BigDecimal("1500.00")
                 )
         )).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("07:00–16:00");
+                .hasMessageContaining("published windows");
 
-        var created = doctorSessionService.createSession(
-                new DoctorSessionRequest(
-                        fixture.doctor.getId(),
-                        null,
+        var morning = doctorSessionService.createSession(
+                sessionRequest(
+                        fixture,
                         LocalDate.now(ZoneId.of("Asia/Colombo")).plusDays(41),
-                        ClinicSchedule.START_TIME,
-                        ClinicSchedule.END_TIME,
-                        ConsultationType.ONLINE,
-                        ClinicSchedule.MAX_APPOINTMENTS_PER_DAY,
-                        ClinicSchedule.MINUTES_PER_PATIENT,
-                        new BigDecimal("1500.00")
+                        ClinicSchedule.MORNING_START,
+                        ClinicSchedule.MORNING_END,
+                        ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
+                        ClinicSchedule.MINUTES_PER_PATIENT
+                )
+        );
+        var afternoon = doctorSessionService.createSession(
+                sessionRequest(
+                        fixture,
+                        LocalDate.now(ZoneId.of("Asia/Colombo")).plusDays(42),
+                        ClinicSchedule.AFTERNOON_START,
+                        ClinicSchedule.AFTERNOON_END,
+                        ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
+                        ClinicSchedule.MINUTES_PER_PATIENT
                 )
         );
 
-        assertThat(created.startTime()).isEqualTo(ClinicSchedule.START_TIME);
-        assertThat(created.endTime()).isEqualTo(ClinicSchedule.END_TIME);
+        assertThat(morning.startTime())
+                .isEqualTo(ClinicSchedule.MORNING_START);
+        assertThat(morning.endTime()).isEqualTo(ClinicSchedule.MORNING_END);
+        assertThat(afternoon.startTime())
+                .isEqualTo(ClinicSchedule.AFTERNOON_START);
+        assertThat(afternoon.endTime())
+                .isEqualTo(ClinicSchedule.AFTERNOON_END);
     }
 
     @Test
-    void capacityAndSlotRulesAcceptThePublishedRanges() {
-        Fixture fixture = new Fixture("limits");
-        LocalDate base = LocalDate.now(ZoneId.of("Asia/Colombo")).plusDays(50);
+    void twoSessionsCanFillButNotExceedTheDailySixtyPatientCap() {
+        Fixture fixture = new Fixture("daily-cap");
+        LocalDate date = LocalDate.now(ZoneId.of("Asia/Colombo")).plusDays(55);
 
-        var smallest = doctorSessionService.createSession(
-                sessionRequest(fixture, base, 1, 5)
+        var morning = doctorSessionService.createSession(
+                sessionRequest(
+                        fixture,
+                        date,
+                        ClinicSchedule.MORNING_START,
+                        ClinicSchedule.MORNING_END,
+                        ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
+                        ClinicSchedule.MINUTES_PER_PATIENT
+                )
         );
-        var largest = doctorSessionService.createSession(
-                sessionRequest(fixture, base.plusDays(1), 60, 9)
-        );
-        var longestSlot = doctorSessionService.createSession(
-                sessionRequest(fixture, base.plusDays(2), 12, 30)
+        var afternoon = doctorSessionService.createSession(
+                sessionRequest(
+                        fixture,
+                        date,
+                        ClinicSchedule.AFTERNOON_START,
+                        ClinicSchedule.AFTERNOON_END,
+                        ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
+                        ClinicSchedule.MINUTES_PER_PATIENT
+                )
         );
 
-        assertThat(smallest.maxAppointments()).isEqualTo(1);
-        assertThat(largest.maxAppointments()).isEqualTo(60);
-        assertThat(longestSlot.minutesPerPatient()).isEqualTo(30);
+        assertThat(morning.maxAppointments()).isEqualTo(30);
+        assertThat(afternoon.maxAppointments()).isEqualTo(30);
+
+        assertThatThrownBy(() -> doctorSessionService.createSession(
+                sessionRequest(
+                        fixture,
+                        date,
+                        ClinicSchedule.MORNING_START,
+                        ClinicSchedule.MORNING_END,
+                        ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
+                        ClinicSchedule.MINUTES_PER_PATIENT
+                )
+        )).isInstanceOf(ConflictException.class)
+                .hasMessageContaining("daily limit of 60");
     }
 
     @Test
@@ -256,22 +343,22 @@ class QueueRulesIntegrationTests {
         assertThatThrownBy(() -> doctorSessionService.createSession(
                 sessionRequest(fixture, base, 0, 5)
         )).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("between 1 and 60");
+                .hasMessageContaining("between 1 and 30");
 
         assertThatThrownBy(() -> doctorSessionService.createSession(
-                sessionRequest(fixture, base.plusDays(1), 61, 5)
+                sessionRequest(fixture, base.plusDays(1), 31, 5)
         )).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("between 1 and 60");
+                .hasMessageContaining("between 1 and 30");
 
         assertThatThrownBy(() -> doctorSessionService.createSession(
                 sessionRequest(fixture, base.plusDays(2), 1, 4)
         )).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("between 5 and 30");
+                .hasMessageContaining("exactly 5 minutes");
 
         assertThatThrownBy(() -> doctorSessionService.createSession(
-                sessionRequest(fixture, base.plusDays(3), 1, 31)
+                sessionRequest(fixture, base.plusDays(3), 1, 6)
         )).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("between 5 and 30");
+                .hasMessageContaining("exactly 5 minutes");
     }
 
     @Test
@@ -307,17 +394,50 @@ class QueueRulesIntegrationTests {
             int maxAppointments,
             int minutesPerPatient
     ) {
+        return sessionRequest(
+                fixture,
+                date,
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
+                maxAppointments,
+                minutesPerPatient
+        );
+    }
+
+    private DoctorSessionRequest sessionRequest(
+            Fixture fixture,
+            LocalDate date,
+            LocalTime startTime,
+            LocalTime endTime,
+            int maxAppointments,
+            int minutesPerPatient
+    ) {
         return new DoctorSessionRequest(
                 fixture.doctor.getId(),
                 null,
                 date,
-                ClinicSchedule.START_TIME,
-                ClinicSchedule.END_TIME,
+                startTime,
+                endTime,
                 ConsultationType.ONLINE,
                 maxAppointments,
                 minutesPerPatient,
                 new BigDecimal("1500.00")
         );
+    }
+
+    private LocalDateTime estimateFor(
+            Patient patient,
+            Appointment appointment
+    ) {
+        return appointmentService
+                .getMyAppointments(patient.getUser().getId())
+                .stream()
+                .filter(item ->
+                        item.appointmentId().equals(appointment.getId())
+                )
+                .findFirst()
+                .orElseThrow()
+                .estimatedConsultationTime();
     }
 
     private Appointment reload(Appointment appointment) {
@@ -346,10 +466,10 @@ class QueueRulesIntegrationTests {
                     doctor,
                     null,
                     LocalDate.now(ZoneId.of("Asia/Colombo")).plusDays(35),
-                    ClinicSchedule.START_TIME,
-                    ClinicSchedule.END_TIME,
+                    ClinicSchedule.MORNING_START,
+                    ClinicSchedule.MORNING_END,
                     ConsultationType.ONLINE,
-                    ClinicSchedule.MAX_APPOINTMENTS_PER_DAY
+                    ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION
             );
             session.updateSchedulingDetails(
                     ClinicSchedule.MINUTES_PER_PATIENT,

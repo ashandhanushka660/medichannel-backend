@@ -14,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.medichannel.config.ClinicSchedule;
 import com.medichannel.entity.Appointment;
 import com.medichannel.entity.Doctor;
 import com.medichannel.entity.DoctorSession;
@@ -180,14 +181,14 @@ class AppointmentPostgresIntegrationTests {
                 doctor,
                 room,
                 LocalDate.now(ZoneId.of("Asia/Colombo")).plusDays(30),
-                LocalTime.of(9, 0),
-                LocalTime.of(12, 0),
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
                 ConsultationType.PHYSICAL,
                 4
         );
 
         session.updateSchedulingDetails(
-                10,
+                ClinicSchedule.MINUTES_PER_PATIENT,
                 new BigDecimal("1500.00")
         );
 

@@ -23,10 +23,10 @@ import com.medichannel.repository.DoctorSessionRepository;
 /**
  * Public roster shown on the guest dashboard before a patient signs in.
  *
- * Every doctor is advertised with the hospital clinic day of 07:00-16:00 and
- * 5–30 minute patient slots. Only sessions that fit that window are used for
- * room, consultation mode and live queue details, so the guest dashboard and
- * the patient booking dashboard always show congruent information.
+ * Every doctor is advertised with the hospital-day envelope of 07:00-16:00.
+ * Only sessions in the published 07:00–09:30 or 12:00–14:30 windows with
+ * five-minute slots are used for room, consultation mode and live queue
+ * details, so the guest dashboard and patient booking dashboard agree.
  */
 @Service
 public class PublicDoctorDirectoryService {

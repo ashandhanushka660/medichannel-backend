@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.medichannel.config.ClinicSchedule;
 import com.medichannel.entity.Doctor;
 import com.medichannel.entity.DoctorSession;
 import com.medichannel.entity.Patient;
@@ -693,12 +694,15 @@ class AdminPortalPostgresIntegrationTests {
                 doctor,
                 room,
                 LocalDate.now(ZoneId.of("Asia/Colombo")).plusDays(30),
-                LocalTime.of(9, 0),
-                LocalTime.of(12, 0),
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
                 ConsultationType.PHYSICAL,
                 4
         );
-        session.updateSchedulingDetails(10, new BigDecimal("1500.00"));
+        session.updateSchedulingDetails(
+                ClinicSchedule.MINUTES_PER_PATIENT,
+                new BigDecimal("1500.00")
+        );
         session.open();
         session = doctorSessionRepository.saveAndFlush(session);
 

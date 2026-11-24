@@ -36,11 +36,11 @@ public record DoctorSessionRequest(
         ConsultationType consultationType,
 
         @Min(1)
-        @Max(60)
+        @Max(30)
         int maxAppointments,
 
         @Min(5)
-        @Max(30)
+        @Max(5)
         int minutesPerPatient,
 
         @NotNull

@@ -115,11 +115,12 @@ public interface DoctorSessionRepository
                    WHERE a.session.id = s.id
                      AND a.status IN :activeStatuses)
                   < s.maxAppointments
-              AND s.startTime >= :clinicStart
-              AND s.endTime <= :clinicEnd
-              AND s.minutesPerPatient BETWEEN :minSlotMinutes AND :maxSlotMinutes
-              AND s.startTime < :periodEnd
-              AND s.endTime > :periodStart
+              AND (
+                    (s.startTime = :morningStart AND s.endTime = :morningEnd)
+                    OR (s.startTime = :afternoonStart AND s.endTime = :afternoonEnd)
+              )
+              AND s.minutesPerPatient = :minutesPerPatient
+              AND s.maxAppointments <= :maxAppointmentsPerSession
               AND d.available = true
               AND sp.active = true
               AND u.accountStatus = 'ACTIVE'
@@ -150,12 +151,32 @@ public interface DoctorSessionRepository
             @Param("toDate") String toDate,
             @Param("q") String q,
             @Param("consultationType") ConsultationType consultationType,
-            @Param("clinicStart") LocalTime clinicStart,
-            @Param("clinicEnd") LocalTime clinicEnd,
-            @Param("minSlotMinutes") int minSlotMinutes,
-            @Param("maxSlotMinutes") int maxSlotMinutes,
-            @Param("periodStart") LocalTime periodStart,
-            @Param("periodEnd") LocalTime periodEnd,
+            @Param("morningStart") LocalTime morningStart,
+            @Param("morningEnd") LocalTime morningEnd,
+            @Param("afternoonStart") LocalTime afternoonStart,
+            @Param("afternoonEnd") LocalTime afternoonEnd,
+            @Param("minutesPerPatient") int minutesPerPatient,
+            @Param("maxAppointmentsPerSession") int maxAppointmentsPerSession,
             @Param("activeStatuses") Collection<AppointmentStatus> activeStatuses
+    );
+
+    /**
+     * Daily 60-patient rule: count every non-cancelled place a doctor has
+     * published on the requested date. The session being edited is excluded
+     * by the caller so its old value is not counted twice.
+     */
+    @Query("""
+            SELECT COALESCE(SUM(s.maxAppointments), 0)
+            FROM DoctorSession s
+            WHERE s.doctor.id = :doctorId
+              AND s.sessionDate = :sessionDate
+              AND s.status <> :cancelledStatus
+              AND (:excludedSessionId IS NULL OR s.id <> :excludedSessionId)
+            """)
+    long sumActiveMaxAppointmentsByDoctorAndDate(
+            @Param("doctorId") UUID doctorId,
+            @Param("sessionDate") LocalDate sessionDate,
+            @Param("cancelledStatus") SessionStatus cancelledStatus,
+            @Param("excludedSessionId") UUID excludedSessionId
     );
 }

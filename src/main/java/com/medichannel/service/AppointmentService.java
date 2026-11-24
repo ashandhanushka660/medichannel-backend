@@ -1314,8 +1314,11 @@ public class AppointmentService {
 
         if (enforcePublishedSchedule && !ClinicSchedule.isBookableSession(session)) {
             throw new ConflictException(
-                    "This session is outside the published 07:00–16:00 clinic hours "
-                            + "or does not use a 5–30 minute patient slot."
+                    "This session is outside the published windows "
+                            + "(" + ClinicSchedule.allowedWindowLabel() + ") "
+                            + "or does not use a "
+                            + ClinicSchedule.MINUTES_PER_PATIENT
+                            + "-minute patient slot."
             );
         }
 

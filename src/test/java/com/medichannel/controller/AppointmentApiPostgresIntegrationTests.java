@@ -8,6 +8,7 @@ import java.util.UUID;
 
 import jakarta.persistence.EntityManager;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -15,10 +16,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import com.medichannel.config.ClinicSchedule;
 import com.medichannel.entity.Doctor;
 import com.medichannel.entity.DoctorSession;
 import com.medichannel.entity.Patient;
@@ -74,6 +79,9 @@ class AppointmentApiPostgresIntegrationTests {
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
+    private PlatformTransactionManager transactionManager;
+
+    @Autowired
     private RoleRepository roleRepository;
 
     @Autowired
@@ -99,6 +107,27 @@ class AppointmentApiPostgresIntegrationTests {
 
     @Autowired
     private EntityManager entityManager;
+
+    /**
+     * The booking rate limiter counts in a committed, shared database row.
+     * Clear it in an independent transaction so this class never inherits
+     * bookings made by earlier test classes; the booking assertions themselves
+     * are unchanged.
+     */
+    @BeforeEach
+    void resetBookingRateLimits() {
+        TransactionTemplate template =
+                new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW
+        );
+        template.executeWithoutResult(status ->
+                jdbcTemplate.update(
+                        "DELETE FROM api_rate_limits "
+                                + "WHERE rate_key LIKE 'booking:%'"
+                )
+        );
+    }
 
     @Test
     void customerCanBookViewAndCancelOwnAppointment() throws Exception {
@@ -682,14 +711,14 @@ class AppointmentApiPostgresIntegrationTests {
                 LocalDate.now(
                         ZoneId.of("Asia/Colombo")
                 ).plusDays(30),
-                LocalTime.of(9, 0),
-                LocalTime.of(12, 0),
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
                 ConsultationType.PHYSICAL,
                 4
         );
 
         session.updateSchedulingDetails(
-                10,
+                ClinicSchedule.MINUTES_PER_PATIENT,
                 new BigDecimal("1500.00")
         );
 

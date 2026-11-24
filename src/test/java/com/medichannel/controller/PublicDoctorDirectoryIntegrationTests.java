@@ -3,7 +3,6 @@ package com.medichannel.controller;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.UUID;
 
@@ -140,10 +139,14 @@ class PublicDoctorDirectoryIntegrationTests {
                 availableDoctor,
                 room,
                 today,
-                LocalTime.of(7, 0),
-                LocalTime.of(16, 0),
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
                 ConsultationType.PHYSICAL,
                 4
+        );
+        session.updateSchedulingDetails(
+                ClinicSchedule.MINUTES_PER_PATIENT,
+                new BigDecimal("2500.00")
         );
         session.open();
         session = doctorSessionRepository.saveAndFlush(session);
@@ -301,10 +304,14 @@ class PublicDoctorDirectoryIntegrationTests {
                 doctor,
                 room,
                 date,
-                LocalTime.of(7, 0),
-                LocalTime.of(16, 0),
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
                 ConsultationType.PHYSICAL,
                 4
+        );
+        session.updateSchedulingDetails(
+                ClinicSchedule.MINUTES_PER_PATIENT,
+                new BigDecimal("2500.00")
         );
         session.open();
         doctorSessionRepository.saveAndFlush(session);

@@ -20,6 +20,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.medichannel.config.ClinicSchedule;
 import com.medichannel.dto.chat.ChatMessageResponse;
 import com.medichannel.entity.Doctor;
 import com.medichannel.entity.DoctorSession;
@@ -1084,13 +1085,13 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 doctor,
                 room,
                 sessionDate,
-                LocalTime.of(9, 0),
-                LocalTime.of(12, 0),
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
                 ConsultationType.PHYSICAL,
                 4
         );
         firstSession.updateSchedulingDetails(
-                10,
+                ClinicSchedule.MINUTES_PER_PATIENT,
                 new BigDecimal("1500.00")
         );
         firstSession.open();
@@ -1100,13 +1101,13 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 doctor,
                 room,
                 sessionDate.plusDays(1),
-                LocalTime.of(9, 0),
-                LocalTime.of(12, 0),
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
                 ConsultationType.PHYSICAL,
                 4
         );
         secondSession.updateSchedulingDetails(
-                10,
+                ClinicSchedule.MINUTES_PER_PATIENT,
                 new BigDecimal("1500.00")
         );
         secondSession.open();
