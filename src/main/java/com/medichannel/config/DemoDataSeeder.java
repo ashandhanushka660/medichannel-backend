@@ -198,14 +198,14 @@ public class DemoDataSeeder implements ApplicationRunner {
     };
 
     private static final int TARGET_AVAILABLE_DOCTORS = 40;
-    private static final int SESSIONS_PER_DOCTOR_PER_WEEK = 3;
+    private static final int SESSIONS_PER_DOCTOR_PER_WEEK = 6;
     private static final int DOCTORS_PER_DAY = 20;
     // The public dashboard offers sessions up to six months ahead, week by
     // week, so the demo roster is published for the same horizon.
     private static final int PUBLISHED_WEEKS = 26;
 
-    // 20 doctors x 3 days = 60 sessions on each of six days, so the published
-    // week has 120 sessions with at least 20 available every scheduled day.
+    // 20 doctors x 3 days x 2 windows = 120 sessions per cohort, so the two
+    // cohorts publish 240 sessions each week with 20 doctors on every day.
     private static final int[] MON_WED_FRI = {0, 2, 4};
     private static final int[] TUE_THU_SAT = {1, 3, 5};
 
@@ -300,7 +300,7 @@ public class DemoDataSeeder implements ApplicationRunner {
 
         logger.info(
                 "Demo data seeding finished: {} doctors, {} rooms and "
-                        + "three sessions per doctor each week are available.",
+                        + "six sessions per doctor each week are available.",
                 doctors.size(),
                 rooms.size()
         );

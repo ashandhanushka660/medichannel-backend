@@ -5,8 +5,10 @@ import java.math.RoundingMode;
 import java.sql.Date;
 import java.sql.Time;
 import java.time.Clock;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.UUID;
 
@@ -53,6 +55,14 @@ public class ReportService {
             );
         }
 
+        LocalDate sessionsWeekFrom = today
+                .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate sessionsWeekTo = sessionsWeekFrom.plusDays(6);
+        long sessionsThisWeek = countSessionsThisWeek(
+                sessionsWeekFrom,
+                sessionsWeekTo
+        );
+
         List<TodaySession> todaySessions = todaySessions(today);
         List<DailyAppointmentCount> perDay =
                 appointmentsPerDay(rangeStart, rangeEnd);
@@ -78,6 +88,9 @@ public class ReportService {
         return new ReportOverviewResponse(
                 rangeStart,
                 rangeEnd,
+                sessionsWeekFrom,
+                sessionsWeekTo,
+                sessionsThisWeek,
                 todaySessions,
                 perDay,
                 physical,
@@ -91,6 +104,29 @@ public class ReportService {
                 topDoctors(rangeStart, rangeEnd),
                 doctorRatings()
         );
+    }
+
+    /**
+     * The brief states that the hospital runs more than 120 channelling
+     * sessions a week. This count is deliberately independent of the report's
+     * from/to range so the dashboard can show the real weekly roster while
+     * keeping its other figures scoped to today.
+     */
+    private long countSessionsThisWeek(LocalDate from, LocalDate to) {
+        String sql = """
+                SELECT COUNT(*)
+                FROM doctor_sessions
+                WHERE session_date BETWEEN ? AND ?
+                  AND status <> 'CANCELLED'
+                """;
+
+        Long count = jdbcTemplate.queryForObject(
+                sql,
+                Long.class,
+                Date.valueOf(from),
+                Date.valueOf(to)
+        );
+        return count == null ? 0L : count;
     }
 
     private List<TodaySession> todaySessions(LocalDate today) {

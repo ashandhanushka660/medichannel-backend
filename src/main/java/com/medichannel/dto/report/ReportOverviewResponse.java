@@ -15,6 +15,10 @@ public record ReportOverviewResponse(
         LocalDate from,
         LocalDate to,
 
+        LocalDate sessionsWeekFrom,
+        LocalDate sessionsWeekTo,
+        long sessionsThisWeek,
+
         List<TodaySession> todaySessions,
         List<DailyAppointmentCount> appointmentsPerDay,
 
