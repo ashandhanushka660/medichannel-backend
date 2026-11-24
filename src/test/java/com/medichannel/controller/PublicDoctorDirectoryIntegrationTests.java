@@ -218,6 +218,98 @@ class PublicDoctorDirectoryIntegrationTests {
         assertThat(off.get("defaultHours").asInt()).isEqualTo(8);
     }
 
+    @Test
+    void sessionsCanBeFilteredByAnInclusiveWeekRange() throws Exception {
+        String unique = UUID.randomUUID().toString().replace("-", "");
+
+        Role doctorRole = roleRepository.findByName("DOCTOR").orElseThrow();
+        Specialisation specialisation = specialisationRepository.saveAndFlush(
+                new Specialisation(
+                        "Range Test " + unique,
+                        "Temporary public session range test"
+                )
+        );
+        Doctor doctor = createDoctor(
+                doctorRole,
+                specialisation,
+                "Range",
+                "Doctor",
+                "RANGE-" + unique,
+                new BigDecimal("2500.00"),
+                unique
+        );
+        Room room = roomRepository.saveAndFlush(
+                new Room(
+                        "RANGE-" + unique.substring(0, 10),
+                        "Range Test Room",
+                        "Local Test Hospital",
+                        RoomType.CONSULTATION,
+                        4
+                )
+        );
+
+        LocalDate weekStart = LocalDate
+                .now(ZoneId.of("Asia/Colombo"))
+                .plusDays(1);
+        saveOpenSession(doctor, room, weekStart);
+        saveOpenSession(doctor, room, weekStart.plusDays(6));
+        saveOpenSession(doctor, room, weekStart.plusDays(7));
+        // The dashboard's last option reaches six months ahead.
+        saveOpenSession(doctor, room, weekStart.plusDays(181));
+
+        String weekBody = mockMvc.perform(get("/api/v1/sessions")
+                        .param("from", weekStart.toString())
+                        .param("to", weekStart.plusDays(6).toString()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode week = objectMapper.readTree(weekBody);
+        assertThat(week.size()).isEqualTo(2);
+        assertThat(week.get(0).get("sessionDate").asText())
+                .isEqualTo(weekStart.toString());
+        assertThat(week.get(1).get("sessionDate").asText())
+                .isEqualTo(weekStart.plusDays(6).toString());
+
+        // The existing exact-date filter remains available for other callers.
+        String dayBody = mockMvc.perform(get("/api/v1/sessions")
+                        .param("date", weekStart.plusDays(7).toString()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode day = objectMapper.readTree(dayBody);
+        assertThat(day.size()).isEqualTo(1);
+        assertThat(day.get(0).get("sessionDate").asText())
+                .isEqualTo(weekStart.plusDays(7).toString());
+
+        String sixMonthBody = mockMvc.perform(get("/api/v1/sessions")
+                        .param("from", weekStart.toString())
+                        .param("to", weekStart.plusDays(181).toString()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode sixMonths = objectMapper.readTree(sixMonthBody);
+        assertThat(sixMonths.size()).isEqualTo(4);
+        assertThat(sixMonths.get(3).get("sessionDate").asText())
+                .isEqualTo(weekStart.plusDays(181).toString());
+    }
+
+    private void saveOpenSession(Doctor doctor, Room room, LocalDate date) {
+        var session = new com.medichannel.entity.DoctorSession(
+                doctor,
+                room,
+                date,
+                LocalTime.of(7, 0),
+                LocalTime.of(16, 0),
+                ConsultationType.PHYSICAL,
+                4
+        );
+        session.open();
+        doctorSessionRepository.saveAndFlush(session);
+    }
+
     private Doctor createDoctor(
             Role role,
             Specialisation specialisation,

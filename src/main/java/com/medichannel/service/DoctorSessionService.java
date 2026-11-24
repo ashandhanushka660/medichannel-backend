@@ -438,11 +438,21 @@ public class DoctorSessionService {
             UUID doctorId,
             UUID specialisationId,
             LocalDate sessionDate,
+            LocalDate fromDate,
+            LocalDate toDate,
             String doctorName,
             ConsultationType consultationType,
             LocalTime period
     ) {
         LocalDateTime now = LocalDateTime.now(clock);
+
+        // A week/month view sends an inclusive range. Keep the ordering sane
+        // even when a client supplies the dates the other way around.
+        if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
+            LocalDate earlier = fromDate;
+            fromDate = toDate;
+            toDate = earlier;
+        }
 
         String query = doctorName == null
                 ? null
@@ -467,6 +477,8 @@ public class DoctorSessionService {
                 doctorId,
                 specialisationId,
                 sessionDate == null ? null : sessionDate.toString(),
+                fromDate == null ? null : fromDate.toString(),
+                toDate == null ? null : toDate.toString(),
                 query == null || query.isEmpty() ? null : query,
                 consultationType,
                 ClinicSchedule.START_TIME,

@@ -38,6 +38,8 @@ public class DoctorSessionController {
             @RequestParam(required = false) UUID doctorId,
             @RequestParam(required = false) UUID specialisationId,
             @RequestParam(required = false) LocalDate date,
+            @RequestParam(required = false) LocalDate from,
+            @RequestParam(required = false) LocalDate to,
             @RequestParam(required = false) String q,
             @RequestParam(required = false) ConsultationType consultationType,
             @RequestParam(required = false) LocalTime period
@@ -47,6 +49,8 @@ public class DoctorSessionController {
                         doctorId,
                         specialisationId,
                         date,
+                        from,
+                        to,
                         q,
                         consultationType,
                         period

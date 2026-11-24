@@ -410,6 +410,8 @@ class PatientBookingCongruenceIntegrationTests {
                 null,
                 null,
                 null,
+                null,
+                null,
                 LocalTime.of(7, 0),
                 LocalTime.of(16, 0),
                 5,

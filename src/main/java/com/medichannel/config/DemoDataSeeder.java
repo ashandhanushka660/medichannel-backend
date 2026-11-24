@@ -200,6 +200,9 @@ public class DemoDataSeeder implements ApplicationRunner {
     private static final int TARGET_AVAILABLE_DOCTORS = 40;
     private static final int SESSIONS_PER_DOCTOR_PER_WEEK = 3;
     private static final int DOCTORS_PER_DAY = 20;
+    // The public dashboard offers sessions up to six months ahead, week by
+    // week, so the demo roster is published for the same horizon.
+    private static final int PUBLISHED_WEEKS = 26;
 
     // 20 doctors x 3 days = 60 sessions on each of six days, so the published
     // week has 120 sessions with at least 20 available every scheduled day.
@@ -759,14 +762,14 @@ public class DemoDataSeeder implements ApplicationRunner {
     }
 
     /**
-     * Retire published sessions outside the six-day roster instead of
+     * Retire published sessions outside the six-month roster instead of
      * deleting them. Sessions with a live consultation keep their OPEN status
      * so patient history and the current queue are never broken; other stale
-     * sessions are cancelled and replaced by the fresh weekly roster.
+     * sessions are cancelled and replaced by the fresh published roster.
      */
     private void cancelStalePublishedSessions() {
         LocalDate firstDate = LocalDate.now(clock);
-        LocalDate lastDate = firstDate.plusDays(5);
+        LocalDate lastDate = firstDate.plusDays(PUBLISHED_WEEKS * 7L - 1);
         UUID managerId = userRepository.findByEmail(
                 "manager@" + EMAIL_DOMAIN
         ).map(User::getId).orElse(null);
@@ -806,12 +809,11 @@ public class DemoDataSeeder implements ApplicationRunner {
     }
 
     /**
-     * Forty available doctors each receive three sessions starting today and
-     * spanning six days. The first 20 publish on offsets 0/2/4 and the rest
-     * on 1/3/5, so
-     * every scheduled day has exactly 20 sessions and the week has 120. Each
-     * session covers the published clinic day with a five-minute default slot;
-     * the session service enforces 5–30 minutes.
+     * Forty available doctors each receive three sessions per published week
+     * for 26 weeks. The first 20 publish on offsets 0/2/4 and the rest on
+     * 1/3/5, so every scheduled day has exactly 20 sessions and each week has
+     * 120. Each session covers the published clinic day with a five-minute
+     * default slot; the session service enforces 5–30 minutes.
      */
     private void seedSessions(List<Doctor> doctors, List<Room> rooms) {
         LocalDate firstDate = LocalDate.now(clock);
@@ -824,57 +826,62 @@ public class DemoDataSeeder implements ApplicationRunner {
                         left.getRoomNumber().compareTo(right.getRoomNumber()))
                 .toList();
 
-        int doctorIndex = 0;
         int sessionsCreated = 0;
-        for (Doctor doctor : doctors) {
-            if (!doctor.isAvailable()) {
-                continue;
-            }
-
-            int[] dayOffsets = doctorIndex < DOCTORS_PER_DAY
-                    ? MON_WED_FRI
-                    : TUE_THU_SAT;
-            for (int dayOffset : dayOffsets) {
-                LocalDate date = firstDate.plusDays(dayOffset);
-
-                if (!doctorSessionRepository
-                        .findByDoctorIdAndSessionDateAndStatus(
-                                doctor.getId(),
-                                date,
-                                SessionStatus.OPEN
-                        ).isEmpty()) {
+        for (int week = 0; week < PUBLISHED_WEEKS; week += 1) {
+            int doctorIndex = 0;
+            for (Doctor doctor : doctors) {
+                if (!doctor.isAvailable()) {
                     continue;
                 }
 
-                Room room = consultationRooms.stream()
-                        .filter(candidate -> isRoomAvailable(candidate, date))
-                        .findFirst()
-                        .orElse(null);
-                boolean online = room == null;
+                int[] dayOffsets = doctorIndex < DOCTORS_PER_DAY
+                        ? MON_WED_FRI
+                        : TUE_THU_SAT;
+                for (int dayOffset : dayOffsets) {
+                    LocalDate date = firstDate.plusDays(
+                            week * 7L + dayOffset
+                    );
 
-                doctorSessionService.createSession(
-                        new DoctorSessionRequest(
-                                doctor.getId(),
-                                online ? null : room.getId(),
-                                date,
-                                ClinicSchedule.START_TIME,
-                                ClinicSchedule.END_TIME,
-                                online
-                                        ? ConsultationType.ONLINE
-                                        : ConsultationType.PHYSICAL,
-                                ClinicSchedule.MAX_APPOINTMENTS_PER_DAY,
-                                ClinicSchedule.MINUTES_PER_PATIENT,
-                                FEES[doctorIndex % FEES.length]
-                        )
-                );
-                sessionsCreated += 1;
+                    if (!doctorSessionRepository
+                            .findByDoctorIdAndSessionDateAndStatus(
+                                    doctor.getId(),
+                                    date,
+                                    SessionStatus.OPEN
+                            ).isEmpty()) {
+                        continue;
+                    }
+
+                    Room room = consultationRooms.stream()
+                            .filter(candidate -> isRoomAvailable(candidate, date))
+                            .findFirst()
+                            .orElse(null);
+                    boolean online = room == null;
+
+                    doctorSessionService.createSession(
+                            new DoctorSessionRequest(
+                                    doctor.getId(),
+                                    online ? null : room.getId(),
+                                    date,
+                                    ClinicSchedule.START_TIME,
+                                    ClinicSchedule.END_TIME,
+                                    online
+                                            ? ConsultationType.ONLINE
+                                            : ConsultationType.PHYSICAL,
+                                    ClinicSchedule.MAX_APPOINTMENTS_PER_DAY,
+                                    ClinicSchedule.MINUTES_PER_PATIENT,
+                                    FEES[doctorIndex % FEES.length]
+                            )
+                    );
+                    sessionsCreated += 1;
+                }
+
+                doctorIndex += 1;
             }
-
-            doctorIndex += 1;
         }
 
         logger.info(
-                "Weekly doctor sessions created: {} ({} per doctor).",
+                "Doctor sessions created across {} weeks: {} ({} per doctor per week).",
+                PUBLISHED_WEEKS,
                 sessionsCreated,
                 SESSIONS_PER_DOCTOR_PER_WEEK
         );

@@ -87,6 +87,14 @@ public interface DoctorSessionRepository
                     OR CAST(s.sessionDate AS string) = :sessionDate
               )
               AND (
+                    :fromDate IS NULL
+                    OR CAST(s.sessionDate AS string) >= :fromDate
+              )
+              AND (
+                    :toDate IS NULL
+                    OR CAST(s.sessionDate AS string) <= :toDate
+              )
+              AND (
                     s.sessionDate > :today
                     OR (
                         s.sessionDate = :today
@@ -138,6 +146,8 @@ public interface DoctorSessionRepository
             @Param("doctorId") UUID doctorId,
             @Param("specialisationId") UUID specialisationId,
             @Param("sessionDate") String sessionDate,
+            @Param("fromDate") String fromDate,
+            @Param("toDate") String toDate,
             @Param("q") String q,
             @Param("consultationType") ConsultationType consultationType,
             @Param("clinicStart") LocalTime clinicStart,
