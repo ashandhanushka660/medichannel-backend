@@ -566,9 +566,10 @@ public class DemoDataSeeder implements ApplicationRunner {
     private List<Doctor> seedDoctors(
             List<Specialisation> specialisations
     ) {
-        long availableDoctors = doctorRepository.findAll().stream()
-                .filter(Doctor::isAvailable)
-                .count();
+        // Use the same eligibility rule as patient booking: an available
+        // doctor profile is not enough if its account is disabled, deleted,
+        // unverified or tied to an inactive specialisation.
+        long availableDoctors = doctorRepository.findPublicDirectory().size();
 
         for (int index = 0; index < DOCTORS.length; index++) {
             String[] details = DOCTORS[index];
@@ -584,7 +585,7 @@ public class DemoDataSeeder implements ApplicationRunner {
             if (!userRepository.existsByEmail(email)) {
                 if (availableDoctors >= TARGET_AVAILABLE_DOCTORS) {
                     logger.info(
-                            "Available doctor roster is full at {}; {} was not created.",
+                            "Eligible doctor roster is full at {}; {} was not created.",
                             availableDoctors,
                             email
                     );
@@ -595,23 +596,16 @@ public class DemoDataSeeder implements ApplicationRunner {
                         Integer.parseInt(details[3])
                 );
 
-                doctorService.createDoctor(new CreateDoctorRequest(
+                createDemoDoctor(
                         email,
-                        demoPassword,
                         demoPassword,
                         firstName,
                         lastName,
                         registrationNumber,
                         details[2],
-                        specialisation.getId(),
+                        specialisation,
                         FEES[index]
-                ));
-
-                User user = userRepository.findByEmail(email)
-                        .orElseThrow();
-
-                user.activateAfterVerification();
-                userRepository.saveAndFlush(user);
+                );
 
                 availableDoctors += 1;
                 logger.info("Demo doctor created: {}", email);
@@ -623,21 +617,97 @@ public class DemoDataSeeder implements ApplicationRunner {
                             "The demo doctor profile could not be created."
                     ));
 
-            if (!doctor.isAvailable()) {
+            if (doctorRepository.findPublicDoctorById(doctor.getId()).isEmpty()) {
                 logger.warn(
-                    "Demo doctor profile is unavailable: {}",
+                    "Demo doctor is not eligible for published sessions: {}",
                     registrationNumber
                 );
             }
         }
 
-        // Include every available doctor in the roster, including demo accounts
-        // seeded by earlier releases, so the published week always has 40.
-        return doctorRepository.findAll().stream()
-                .filter(Doctor::isAvailable)
+        // A deleted or suspended account is never restored. If the eligible
+        // roster is short, create a fresh replacement doctor so patients keep
+        // seeing 40 bookable doctors every day.
+        int replacementIndex = 0;
+        while (availableDoctors < TARGET_AVAILABLE_DOCTORS) {
+            createReplacementDoctor(specialisations, replacementIndex);
+            availableDoctors += 1;
+            replacementIndex += 1;
+        }
+
+        // Include every publicly eligible doctor in the roster, including
+        // accounts seeded by earlier releases, so the published week has 40.
+        return doctorRepository.findPublicDirectory().stream()
                 .sorted(Comparator.comparing(Doctor::getRegistrationNumber))
                 .limit(TARGET_AVAILABLE_DOCTORS)
                 .toList();
+    }
+
+    private void createDemoDoctor(
+            String email,
+            String password,
+            String firstName,
+            String lastName,
+            String registrationNumber,
+            String qualifications,
+            Specialisation specialisation,
+            BigDecimal fee
+    ) {
+        doctorService.createDoctor(new CreateDoctorRequest(
+                email,
+                password,
+                password,
+                firstName,
+                lastName,
+                registrationNumber,
+                qualifications,
+                specialisation.getId(),
+                fee
+        ));
+
+        User user = userRepository.findByEmail(email).orElseThrow();
+        user.activateAfterVerification();
+        userRepository.saveAndFlush(user);
+    }
+
+    private void createReplacementDoctor(
+            List<Specialisation> specialisations,
+            int replacementIndex
+    ) {
+        int candidate = replacementIndex;
+        String email;
+        String registrationNumber;
+
+        do {
+            email = String.format(
+                    Locale.ROOT,
+                    "relief-doctor-%02d@%s",
+                    candidate,
+                    EMAIL_DOMAIN
+            );
+            registrationNumber = String.format(
+                    Locale.ROOT,
+                    "SLMC-%05d",
+                    90000 + candidate
+            );
+            candidate += 1;
+        } while (userRepository.existsByEmail(email)
+                || doctorRepository.existsByRegistrationNumber(
+                        registrationNumber
+                ));
+
+        createDemoDoctor(
+                email,
+                demoPassword,
+                "Relief",
+                "Doctor " + candidate,
+                registrationNumber,
+                "MBBS, MD (General Medicine)",
+                specialisations.get(candidate % specialisations.size()),
+                FEES[candidate % FEES.length]
+        );
+
+        logger.info("Replacement demo doctor created: {}", email);
     }
 
     private void seedDemoAdmin() {

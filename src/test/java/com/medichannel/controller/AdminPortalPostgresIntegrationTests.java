@@ -27,6 +27,7 @@ import com.medichannel.entity.User;
 import com.medichannel.enums.ConsultationType;
 import com.medichannel.enums.RoomType;
 import com.medichannel.repository.DoctorRepository;
+import com.medichannel.repository.AppointmentRepository;
 import com.medichannel.repository.DoctorSessionRepository;
 import com.medichannel.repository.PatientRepository;
 import com.medichannel.repository.RoleRepository;
@@ -39,7 +40,9 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -91,6 +94,9 @@ class AdminPortalPostgresIntegrationTests {
 
     @Autowired
     private DoctorSessionRepository doctorSessionRepository;
+
+    @Autowired
+    private AppointmentRepository appointmentRepository;
 
     @Autowired
     private PatientDataProtectionService dataProtectionService;
@@ -480,6 +486,40 @@ class AdminPortalPostgresIntegrationTests {
                                 {"method": "CARD"}
                                 """)
         ).andExpect(status().isCreated());
+    }
+
+    @Test
+    void adminCanPermanentlyDeleteADoctorWhileKeepingClinicalHistory()
+            throws Exception {
+
+        TestFixture fixture = createFixture();
+        String appointmentId = bookAppointment(fixture);
+        payForAppointment(appointmentId, fixture.patientUserId());
+
+        mockMvc.perform(
+                delete(ADMIN_URL + "/users/" + fixture.doctorUserId())
+                        .with(adminJwt(fixture.adminUserId()))
+        ).andExpect(status().isOk())
+                .andExpect(jsonPath("$.accountStatus").value("DELETED"));
+
+        User deleted = userRepository.findById(fixture.doctorUserId())
+                .orElseThrow();
+        assertThat(deleted.getAccountStatus()).isEqualTo("DELETED");
+        assertThat(deleted.getTokenVersion()).isGreaterThan(1);
+
+        Doctor doctor = doctorRepository.findById(fixture.doctorId())
+                .orElseThrow();
+        assertThat(doctor.isAvailable()).isFalse();
+
+        // BR-11: no doctor, session, appointment or payment row is removed.
+        assertThat(doctorSessionRepository.findById(fixture.sessionId()))
+                .isPresent();
+        assertThat(appointmentRepository.findById(UUID.fromString(appointmentId)))
+                .isPresent();
+
+        // A deleted account cannot be brought back to a signable state.
+        assertThatThrownBy(deleted::activateByAdministrator)
+                .isInstanceOf(IllegalStateException.class);
     }
 
     private TestFixture createFixture() {

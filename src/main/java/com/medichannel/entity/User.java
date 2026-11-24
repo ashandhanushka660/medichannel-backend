@@ -184,7 +184,8 @@ public class User {
     public void activateAfterVerification() {
         if ("LOCKED".equals(accountStatus)
                 || "SUSPENDED".equals(accountStatus)
-                || "DISABLED".equals(accountStatus)) {
+                || "DISABLED".equals(accountStatus)
+                || "DELETED".equals(accountStatus)) {
             throw new IllegalStateException(
                     "This account cannot be activated."
             );
@@ -194,8 +195,14 @@ public class User {
         this.accountStatus = "ACTIVE";
     }
 
-    // Administrator approval. This also clears any temporary lock.
+    // Administrator approval. This also clears any temporary lock. A deleted
+    // account is terminal: its history is kept but it can never be restored.
     public void activateByAdministrator() {
+        if ("DELETED".equals(accountStatus)) {
+            throw new IllegalStateException(
+                    "A deleted account cannot be reactivated."
+            );
+        }
         this.emailVerified = true;
         this.accountStatus = "ACTIVE";
         this.failedLoginAttempts = 0;
@@ -203,13 +210,23 @@ public class User {
     }
 
     public void suspend() {
+        ensureNotDeleted();
         this.accountStatus = "SUSPENDED";
         this.lockedUntil = null;
     }
 
     public void disable() {
+        ensureNotDeleted();
         this.accountStatus = "DISABLED";
         this.lockedUntil = null;
+    }
+
+    private void ensureNotDeleted() {
+        if ("DELETED".equals(accountStatus)) {
+            throw new IllegalStateException(
+                    "A deleted account cannot be changed."
+            );
+        }
     }
 
     // Soft delete. Records with history are never removed (BR-11), so the
