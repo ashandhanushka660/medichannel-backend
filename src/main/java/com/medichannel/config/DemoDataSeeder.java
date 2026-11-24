@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -36,6 +37,7 @@ import com.medichannel.entity.Role;
 import com.medichannel.entity.Room;
 import com.medichannel.entity.Specialisation;
 import com.medichannel.entity.User;
+import com.medichannel.enums.AppointmentStatus;
 import com.medichannel.enums.ConsultationType;
 import com.medichannel.enums.RoomType;
 import com.medichannel.enums.SessionStatus;
@@ -107,10 +109,38 @@ public class DemoDataSeeder implements ApplicationRunner {
             {"Sanjeewa", "Dissanayake", "MBBS, MD (General Medicine)", "5"},
             {"Hasini", "Karunaratne", "MBBS, MS (Obstetrics & Gynaecology)", "6"},
             {"Nuwan", "Herath", "MBBS, MS (ENT)", "7"},
-            {"Chamari", "Weerasinghe", "MBBS, MD (Dermatology)", "3"}
+            {"Chamari", "Weerasinghe", "MBBS, MD (Dermatology)", "3"},
+            {"Nimali", "Fernando", "MBBS, MD (Cardiology)", "0"},
+            {"Pradeep", "Kumara", "MBBS, MD (Neurology)", "1"},
+            {"Shashini", "Maduranga", "MBBS, MD (Paediatrics)", "2"},
+            {"Eranda", "Weeraratne", "MBBS, MD (Dermatology)", "3"},
+            {"Lahiru", "Dharmasena", "MBBS, MS (Orthopaedics)", "4"},
+            {"Gayani", "Alwis", "MBBS, MD (General Medicine)", "5"},
+            {"Chamila", "Rajapaksa", "MBBS, MS (Obstetrics & Gynaecology)", "6"},
+            {"Thusara", "Vidanage", "MBBS, MS (ENT)", "7"},
+            {"Anushka", "Liyanage", "MBBS, MD (Cardiology)", "0"},
+            {"Mithun", "Perera", "MBBS, MD (Neurology)", "1"},
+            {"Piumi", "Rathnayake", "MBBS, MD (Paediatrics)", "2"},
+            {"Sampath", "Sooriyaarachchi", "MBBS, MD (Dermatology)", "3"},
+            {"Dulan", "Amarasinghe", "MBBS, MS (Orthopaedics)", "4"},
+            {"Nayomi", "Jayasinghe", "MBBS, MD (General Medicine)", "5"},
+            {"Ranjith", "Wickramasinghe", "MBBS, MS (Obstetrics & Gynaecology)", "6"},
+            {"Supuni", "Gamage", "MBBS, MS (ENT)", "7"},
+            {"Akila", "Deshapriya", "MBBS, MD (Cardiology)", "0"},
+            {"Thilini", "Weerasekara", "MBBS, MD (Neurology)", "1"},
+            {"Sandun", "Herath", "MBBS, MD (Paediatrics)", "2"},
+            {"Madhavi", "Gunasekara", "MBBS, MD (Dermatology)", "3"},
+            {"Charith", "Piyadasa", "MBBS, MS (Orthopaedics)", "4"},
+            {"Damayanthi", "Senanayake", "MBBS, MD (General Medicine)", "5"},
+            {"Prasanna", "Jayawardena", "MBBS, MS (Obstetrics & Gynaecology)", "6"},
+            {"Ruwanthi", "Lokuge", "MBBS, MS (ENT)", "7"},
+            {"Bimal", "Fernando", "MBBS, MD (Cardiology)", "0"},
+            {"Hashini", "Premaratne", "MBBS, MD (Neurology)", "1"},
+            {"Navod", "Chandrasena", "MBBS, MD (Paediatrics)", "2"},
+            {"Ishani", "Gallage", "MBBS, MD (Dermatology)", "3"}
     };
 
-    // Two decimal fees between LKR 2,500 and 4,500.
+    // Two decimal fees between LKR 2,500 and 4,500 for all 40 doctors.
     private static final BigDecimal[] FEES = {
             new BigDecimal("4500.00"),
             new BigDecimal("4200.00"),
@@ -123,7 +153,35 @@ public class DemoDataSeeder implements ApplicationRunner {
             new BigDecimal("2500.00"),
             new BigDecimal("4000.00"),
             new BigDecimal("3800.00"),
-            new BigDecimal("3000.00")
+            new BigDecimal("3000.00"),
+            new BigDecimal("4100.00"),
+            new BigDecimal("3600.00"),
+            new BigDecimal("3200.00"),
+            new BigDecimal("2900.00"),
+            new BigDecimal("4400.00"),
+            new BigDecimal("2700.00"),
+            new BigDecimal("3300.00"),
+            new BigDecimal("3100.00"),
+            new BigDecimal("4300.00"),
+            new BigDecimal("3700.00"),
+            new BigDecimal("3400.00"),
+            new BigDecimal("2800.00"),
+            new BigDecimal("4500.00"),
+            new BigDecimal("2600.00"),
+            new BigDecimal("3900.00"),
+            new BigDecimal("3050.00"),
+            new BigDecimal("4150.00"),
+            new BigDecimal("3550.00"),
+            new BigDecimal("3250.00"),
+            new BigDecimal("2950.00"),
+            new BigDecimal("4450.00"),
+            new BigDecimal("2750.00"),
+            new BigDecimal("3350.00"),
+            new BigDecimal("3150.00"),
+            new BigDecimal("4350.00"),
+            new BigDecimal("3650.00"),
+            new BigDecimal("3450.00"),
+            new BigDecimal("2850.00")
     };
 
     private static final String[][] ROOMS = {
@@ -138,6 +196,15 @@ public class DemoDataSeeder implements ApplicationRunner {
             {"R09", "Procedure Room 1", "Second floor"},
             {"R10", "Consultation Room 10", "Second floor"}
     };
+
+    private static final int TARGET_AVAILABLE_DOCTORS = 40;
+    private static final int SESSIONS_PER_DOCTOR_PER_WEEK = 3;
+    private static final int DOCTORS_PER_DAY = 20;
+
+    // 20 doctors x 3 days = 60 sessions on each of six days, so the published
+    // week has 120 sessions with at least 20 available every scheduled day.
+    private static final int[] MON_WED_FRI = {0, 2, 4};
+    private static final int[] TUE_THU_SAT = {1, 3, 5};
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -223,13 +290,14 @@ public class DemoDataSeeder implements ApplicationRunner {
         seedDemoAdmin();
         seedManager();
 
+        cancelStalePublishedSessions();
         seedSessions(doctors, rooms);
         seedDemoPatientsAndHistory(doctors, rooms);
         seedNotices();
 
         logger.info(
                 "Demo data seeding finished: {} doctors, {} rooms and "
-                        + "sessions for the next 7 days are available.",
+                        + "three sessions per doctor each week are available.",
                 doctors.size(),
                 rooms.size()
         );
@@ -498,7 +566,9 @@ public class DemoDataSeeder implements ApplicationRunner {
     private List<Doctor> seedDoctors(
             List<Specialisation> specialisations
     ) {
-        List<Doctor> result = new ArrayList<>();
+        long availableDoctors = doctorRepository.findAll().stream()
+                .filter(Doctor::isAvailable)
+                .count();
 
         for (int index = 0; index < DOCTORS.length; index++) {
             String[] details = DOCTORS[index];
@@ -512,6 +582,15 @@ public class DemoDataSeeder implements ApplicationRunner {
             );
 
             if (!userRepository.existsByEmail(email)) {
+                if (availableDoctors >= TARGET_AVAILABLE_DOCTORS) {
+                    logger.info(
+                            "Available doctor roster is full at {}; {} was not created.",
+                            availableDoctors,
+                            email
+                    );
+                    continue;
+                }
+
                 Specialisation specialisation = specialisations.get(
                         Integer.parseInt(details[3])
                 );
@@ -534,6 +613,7 @@ public class DemoDataSeeder implements ApplicationRunner {
                 user.activateAfterVerification();
                 userRepository.saveAndFlush(user);
 
+                availableDoctors += 1;
                 logger.info("Demo doctor created: {}", email);
             }
 
@@ -543,10 +623,21 @@ public class DemoDataSeeder implements ApplicationRunner {
                             "The demo doctor profile could not be created."
                     ));
 
-            result.add(doctor);
+            if (!doctor.isAvailable()) {
+                logger.warn(
+                    "Demo doctor profile is unavailable: {}",
+                    registrationNumber
+                );
+            }
         }
 
-        return result;
+        // Include every available doctor in the roster, including demo accounts
+        // seeded by earlier releases, so the published week always has 40.
+        return doctorRepository.findAll().stream()
+                .filter(Doctor::isAvailable)
+                .sorted(Comparator.comparing(Doctor::getRegistrationNumber))
+                .limit(TARGET_AVAILABLE_DOCTORS)
+                .toList();
     }
 
     private void seedDemoAdmin() {
@@ -598,13 +689,63 @@ public class DemoDataSeeder implements ApplicationRunner {
     }
 
     /**
-     * Every available doctor receives exactly one session per day. That
-     * session covers the whole published clinic day, so a doctor who is
-     * available at 07:00 is also available at 08:00 and every other clinic
-     * hour. The 10-minute slot length is enforced by the session service.
+     * Retire published sessions outside the six-day roster instead of
+     * deleting them. Sessions with a live consultation keep their OPEN status
+     * so patient history and the current queue are never broken; other stale
+     * sessions are cancelled and replaced by the fresh weekly roster.
+     */
+    private void cancelStalePublishedSessions() {
+        LocalDate firstDate = LocalDate.now(clock);
+        LocalDate lastDate = firstDate.plusDays(5);
+        UUID managerId = userRepository.findByEmail(
+                "manager@" + EMAIL_DOMAIN
+        ).map(User::getId).orElse(null);
+
+        List<AppointmentStatus> activeStatuses = List.of(
+                AppointmentStatus.BOOKED,
+                AppointmentStatus.ARRIVED,
+                AppointmentStatus.IN_CONSULTATION
+        );
+
+        int cancelled = 0;
+        for (DoctorSession session : doctorSessionRepository.findAll()) {
+            if (session.getStatus() != SessionStatus.OPEN
+                    || session.getSessionDate() == null
+                    || (!session.getSessionDate().isBefore(firstDate)
+                        && !session.getSessionDate().isAfter(lastDate))) {
+                continue;
+            }
+
+            if (appointmentRepository.countBySession_IdAndStatusIn(
+                    session.getId(),
+                    activeStatuses
+            ) > 0) {
+                continue;
+            }
+
+            doctorSessionService.cancelSession(
+                    session.getId(),
+                    managerId,
+                    "MANAGER",
+                    "Replaced by the published weekly session roster."
+            );
+            cancelled += 1;
+        }
+
+        logger.info("Stale empty sessions cancelled: {}.", cancelled);
+    }
+
+    /**
+     * Forty available doctors each receive three sessions starting today and
+     * spanning six days. The first 20 publish on offsets 0/2/4 and the rest
+     * on 1/3/5, so
+     * every scheduled day has exactly 20 sessions and the week has 120. Each
+     * session covers the published clinic day with a five-minute default slot;
+     * the session service enforces 5–30 minutes.
      */
     private void seedSessions(List<Doctor> doctors, List<Room> rooms) {
-        LocalDate today = LocalDate.now(clock);
+        LocalDate firstDate = LocalDate.now(clock);
+
         List<Room> consultationRooms = rooms.stream()
                 .filter(room -> room.isActive()
                         && room.getRoomType() != null
@@ -614,18 +755,23 @@ public class DemoDataSeeder implements ApplicationRunner {
                 .toList();
 
         int doctorIndex = 0;
+        int sessionsCreated = 0;
         for (Doctor doctor : doctors) {
             if (!doctor.isAvailable()) {
                 continue;
             }
 
-            for (int dayOffset = 0; dayOffset < 7; dayOffset++) {
-                LocalDate date = today.plusDays(dayOffset);
+            int[] dayOffsets = doctorIndex < DOCTORS_PER_DAY
+                    ? MON_WED_FRI
+                    : TUE_THU_SAT;
+            for (int dayOffset : dayOffsets) {
+                LocalDate date = firstDate.plusDays(dayOffset);
 
                 if (!doctorSessionRepository
-                        .findByDoctor_IdAndSessionDate(
+                        .findByDoctorIdAndSessionDateAndStatus(
                                 doctor.getId(),
-                                date
+                                date,
+                                SessionStatus.OPEN
                         ).isEmpty()) {
                     continue;
                 }
@@ -651,10 +797,17 @@ public class DemoDataSeeder implements ApplicationRunner {
                                 FEES[doctorIndex % FEES.length]
                         )
                 );
+                sessionsCreated += 1;
             }
 
             doctorIndex += 1;
         }
+
+        logger.info(
+                "Weekly doctor sessions created: {} ({} per doctor).",
+                sessionsCreated,
+                SESSIONS_PER_DOCTOR_PER_WEEK
+        );
     }
 
     private boolean isRoomAvailable(Room room, LocalDate date) {

@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -23,14 +24,19 @@ import com.medichannel.entity.Doctor;
 import com.medichannel.entity.DoctorSession;
 import com.medichannel.entity.Patient;
 import com.medichannel.entity.Role;
+import com.medichannel.entity.Room;
 import com.medichannel.entity.Specialisation;
 import com.medichannel.entity.User;
+import com.medichannel.enums.AppointmentStatus;
 import com.medichannel.enums.ConsultationType;
+import com.medichannel.enums.RoomType;
+import com.medichannel.enums.SessionStatus;
 import com.medichannel.repository.AppointmentRepository;
 import com.medichannel.repository.DoctorRepository;
 import com.medichannel.repository.DoctorSessionRepository;
 import com.medichannel.repository.PatientRepository;
 import com.medichannel.repository.RoleRepository;
+import com.medichannel.repository.RoomRepository;
 import com.medichannel.repository.SpecialisationRepository;
 import com.medichannel.repository.UserRepository;
 import com.medichannel.security.PatientDataProtectionService;
@@ -43,7 +49,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * The patient booking feed must match the availability advertised on the
- * guest dashboard: 07:00-16:00, 10-minute patient slots, available doctors
+ * guest dashboard: 07:00-16:00, 5-minute patient slots, available doctors
  * only. Booking then gives the patient the next number in that session's
  * queue and appears in "My appointments" as before.
  */
@@ -85,6 +91,9 @@ class PatientBookingCongruenceIntegrationTests {
 
     @Autowired
     private DoctorSessionRepository doctorSessionRepository;
+
+    @Autowired
+    private RoomRepository roomRepository;
 
     @Autowired
     private AppointmentRepository appointmentRepository;
@@ -131,21 +140,21 @@ class PatientBookingCongruenceIntegrationTests {
                 date,
                 LocalTime.of(7, 0),
                 LocalTime.of(16, 0),
-                10
+                5
         );
         DoctorSession outsideHours = createSession(
                 availableDoctor,
                 date.plusDays(1),
                 LocalTime.of(18, 0),
                 LocalTime.of(21, 0),
-                10
+                5
         );
-        DoctorSession wrongSlot = createSession(
+        DoctorSession outsideHoursAgain = createSession(
                 availableDoctor,
                 date.plusDays(2),
-                LocalTime.of(9, 0),
-                LocalTime.of(12, 0),
-                15
+                LocalTime.of(17, 0),
+                LocalTime.of(20, 0),
+                5
         );
         DoctorSession unavailableDoctorSession = createSession(
                 unavailableDoctor,
@@ -187,10 +196,10 @@ class PatientBookingCongruenceIntegrationTests {
                 eligible.getId().toString()
         ));
         assertThat(eligibleEntry.get("doctorAvailable").asBoolean()).isTrue();
-        assertThat(eligibleEntry.get("minutesPerPatient").asInt()).isEqualTo(10);
+        assertThat(eligibleEntry.get("minutesPerPatient").asInt()).isEqualTo(5);
         assertThat(sessionIds(sessions)).doesNotContain(
                 outsideHours.getId().toString(),
-                wrongSlot.getId().toString(),
+                outsideHoursAgain.getId().toString(),
                 unavailableDoctorSession.getId().toString()
         );
 
@@ -349,6 +358,78 @@ class PatientBookingCongruenceIntegrationTests {
                 );
     }
 
+    @Test
+    void publicFeedAppliesThePhysicalAndOnlineBookingDeadlines() {
+        String unique = UUID.randomUUID().toString().replace("-", "");
+        Role doctorRole = roleRepository.findByName("DOCTOR").orElseThrow();
+        Specialisation specialisation = specialisationRepository.saveAndFlush(
+                new Specialisation(
+                        "Deadline Test " + unique,
+                        "Temporary booking deadline test"
+                )
+        );
+        Doctor doctor = createDoctor(
+                doctorRole,
+                specialisation,
+                "Deadline",
+                "Doctor",
+                "DL-" + unique,
+                unique
+        );
+
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Colombo"));
+        DoctorSession physicalTooSoon = createSession(
+                doctor, today, LocalTime.of(8, 30), LocalTime.of(10, 0), 5,
+                ConsultationType.PHYSICAL
+        );
+        DoctorSession physicalBookable = createSession(
+                doctor, today, LocalTime.of(10, 0), LocalTime.of(11, 0), 5,
+                ConsultationType.PHYSICAL
+        );
+        DoctorSession onlineTooSoon = createSession(
+                doctor, today, LocalTime.of(11, 0), LocalTime.of(12, 0), 5,
+                ConsultationType.ONLINE
+        );
+        DoctorSession onlineBookable = createSession(
+                doctor, today, LocalTime.of(12, 0), LocalTime.of(13, 0), 5,
+                ConsultationType.ONLINE
+        );
+        DoctorSession tomorrow = createSession(
+                doctor, today.plusDays(1), LocalTime.of(7, 0),
+                LocalTime.of(16, 0), 5, ConsultationType.ONLINE
+        );
+
+        List<UUID> ids = doctorSessionRepository.findPublicOpenSessions(
+                SessionStatus.OPEN,
+                today,
+                ConsultationType.PHYSICAL,
+                LocalTime.of(9, 30),
+                LocalTime.of(11, 30),
+                null,
+                null,
+                null,
+                null,
+                null,
+                LocalTime.of(7, 0),
+                LocalTime.of(16, 0),
+                5,
+                30,
+                LocalTime.MIDNIGHT,
+                LocalTime.of(23, 59, 59),
+                List.of(
+                        AppointmentStatus.BOOKED,
+                        AppointmentStatus.ARRIVED,
+                        AppointmentStatus.IN_CONSULTATION
+                )
+        ).stream().map(DoctorSession::getId).toList();
+
+        assertThat(ids).contains(
+                physicalBookable.getId(),
+                onlineBookable.getId(),
+                tomorrow.getId()
+        ).doesNotContain(physicalTooSoon.getId(), onlineTooSoon.getId());
+    }
+
     private java.util.List<String> sessionIds(JsonNode sessions) {
         java.util.List<String> ids = new java.util.ArrayList<>();
         sessions.forEach((session) -> ids.add(session.get("sessionId").asText()));
@@ -395,13 +476,44 @@ class PatientBookingCongruenceIntegrationTests {
             LocalTime end,
             int minutesPerPatient
     ) {
-        DoctorSession session = new DoctorSession(
+        return createSession(
                 doctor,
-                null,
                 date,
                 start,
                 end,
-                ConsultationType.ONLINE,
+                minutesPerPatient,
+                ConsultationType.ONLINE
+        );
+    }
+
+    private DoctorSession createSession(
+            Doctor doctor,
+            LocalDate date,
+            LocalTime start,
+            LocalTime end,
+            int minutesPerPatient,
+            ConsultationType consultationType
+    ) {
+        Room room = null;
+        if (consultationType == ConsultationType.PHYSICAL) {
+            String suffix = UUID.randomUUID()
+                    .toString().replace("-", "").substring(0, 12);
+            room = roomRepository.saveAndFlush(new Room(
+                    "DL-" + suffix,
+                    "Deadline Test Room",
+                    "Local Test Hospital",
+                    RoomType.CONSULTATION,
+                    4
+            ));
+        }
+
+        DoctorSession session = new DoctorSession(
+                doctor,
+                room,
+                date,
+                start,
+                end,
+                consultationType,
                 4
         );
         session.updateSchedulingDetails(

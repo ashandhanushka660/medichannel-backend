@@ -40,8 +40,6 @@ public interface DoctorSessionRepository
                     LocalDate from
             );
 
-    void deleteByDoctor_Id(UUID doctorId);
-
     List<DoctorSession> findBySessionDateAndStatus(
             LocalDate date,
             SessionStatus status
@@ -70,7 +68,7 @@ public interface DoctorSessionRepository
     );
 
     // Publicly discoverable sessions must be open, in the future, inside the
-    // published clinic day with one 10-minute slot per patient, have remaining
+    // published clinic day with a 5–30 minute slot per patient, have remaining
     // capacity, and belong to an available, eligible doctor.
     @Query("""
             SELECT s
@@ -81,17 +79,26 @@ public interface DoctorSessionRepository
             LEFT JOIN FETCH s.room r
             WHERE s.status = :status
               AND (
-                    (
-                        :sessionDate IS NOT NULL
-                        AND CAST(s.sessionDate AS string) = :sessionDate
-                    )
+                    :sessionDate IS NOT NULL
+                    OR s.sessionDate >= :today
+              )
+              AND (
+                    :sessionDate IS NULL
+                    OR CAST(s.sessionDate AS string) = :sessionDate
+              )
+              AND (
+                    s.sessionDate > :today
                     OR (
-                        :sessionDate IS NULL
+                        s.sessionDate = :today
                         AND (
-                            s.sessionDate > :today
+                            (
+                                s.consultationType = :physicalType
+                                AND s.startTime > :physicalBookingCutoff
+                            )
                             OR (
-                                s.sessionDate = :today
-                                AND (s.endTime > :currentTime OR s.startTime > :currentTime)
+                                (s.consultationType IS NULL
+                                    OR s.consultationType <> :physicalType)
+                                AND s.startTime > :onlineBookingCutoff
                             )
                         )
                     )
@@ -102,7 +109,7 @@ public interface DoctorSessionRepository
                   < s.maxAppointments
               AND s.startTime >= :clinicStart
               AND s.endTime <= :clinicEnd
-              AND s.minutesPerPatient = :slotMinutes
+              AND s.minutesPerPatient BETWEEN :minSlotMinutes AND :maxSlotMinutes
               AND s.startTime < :periodEnd
               AND s.endTime > :periodStart
               AND d.available = true
@@ -125,7 +132,9 @@ public interface DoctorSessionRepository
     List<DoctorSession> findPublicOpenSessions(
             @Param("status") SessionStatus status,
             @Param("today") LocalDate today,
-            @Param("currentTime") LocalTime currentTime,
+            @Param("physicalType") ConsultationType physicalType,
+            @Param("physicalBookingCutoff") LocalTime physicalBookingCutoff,
+            @Param("onlineBookingCutoff") LocalTime onlineBookingCutoff,
             @Param("doctorId") UUID doctorId,
             @Param("specialisationId") UUID specialisationId,
             @Param("sessionDate") String sessionDate,
@@ -133,7 +142,8 @@ public interface DoctorSessionRepository
             @Param("consultationType") ConsultationType consultationType,
             @Param("clinicStart") LocalTime clinicStart,
             @Param("clinicEnd") LocalTime clinicEnd,
-            @Param("slotMinutes") int slotMinutes,
+            @Param("minSlotMinutes") int minSlotMinutes,
+            @Param("maxSlotMinutes") int maxSlotMinutes,
             @Param("periodStart") LocalTime periodStart,
             @Param("periodEnd") LocalTime periodEnd,
             @Param("activeStatuses") Collection<AppointmentStatus> activeStatuses

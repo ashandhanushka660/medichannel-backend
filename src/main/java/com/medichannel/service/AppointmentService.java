@@ -1315,14 +1315,13 @@ public class AppointmentService {
         if (enforcePublishedSchedule && !ClinicSchedule.isBookableSession(session)) {
             throw new ConflictException(
                     "This session is outside the published 07:00–16:00 clinic hours "
-                            + "or does not use 10-minute patient slots."
+                            + "or does not use a 5–30 minute patient slot."
             );
         }
 
-        int bookingCloseMinutes =
-                session.getConsultationType() == ConsultationType.PHYSICAL
-                        ? 60
-                        : 30;
+        int bookingCloseMinutes = ClinicSchedule.bookingCloseMinutes(
+                session.getConsultationType()
+        );
 
         LocalDateTime sessionStart = LocalDateTime.of(
                 session.getSessionDate(),

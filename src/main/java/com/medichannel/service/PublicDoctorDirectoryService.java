@@ -24,7 +24,7 @@ import com.medichannel.repository.DoctorSessionRepository;
  * Public roster shown on the guest dashboard before a patient signs in.
  *
  * Every doctor is advertised with the hospital clinic day of 07:00-16:00 and
- * 10-minute patient slots. Only sessions that fit that window are used for
+ * 5–30 minute patient slots. Only sessions that fit that window are used for
  * room, consultation mode and live queue details, so the guest dashboard and
  * the patient booking dashboard always show congruent information.
  */

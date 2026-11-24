@@ -455,7 +455,15 @@ public class DoctorSessionService {
         return doctorSessionRepository.findPublicOpenSessions(
                 SessionStatus.OPEN,
                 now.toLocalDate(),
-                now.toLocalTime(),
+                ConsultationType.PHYSICAL,
+                ClinicSchedule.bookingCutoff(
+                        now.toLocalTime(),
+                        ConsultationType.PHYSICAL
+                ),
+                ClinicSchedule.bookingCutoff(
+                        now.toLocalTime(),
+                        ConsultationType.ONLINE
+                ),
                 doctorId,
                 specialisationId,
                 sessionDate == null ? null : sessionDate.toString(),
@@ -463,7 +471,8 @@ public class DoctorSessionService {
                 consultationType,
                 ClinicSchedule.START_TIME,
                 ClinicSchedule.END_TIME,
-                ClinicSchedule.MINUTES_PER_PATIENT,
+                ClinicSchedule.MIN_SLOT_MINUTES,
+                ClinicSchedule.MAX_SLOT_MINUTES,
                 periodStart,
                 periodEnd,
                 List.of(
@@ -568,9 +577,10 @@ public class DoctorSessionService {
             );
         }
 
-        if (request.minutesPerPatient() != ClinicSchedule.MINUTES_PER_PATIENT) {
+        if (request.minutesPerPatient() < ClinicSchedule.MIN_SLOT_MINUTES
+                || request.minutesPerPatient() > ClinicSchedule.MAX_SLOT_MINUTES) {
             throw new IllegalArgumentException(
-                    "Each patient must be allocated exactly 10 minutes."
+                    "Each patient must be allocated between 5 and 30 minutes."
             );
         }
 
@@ -586,16 +596,10 @@ public class DoctorSessionService {
         }
 
         if (request.maxAppointments() < 1
-                || request.maxAppointments() > 60) {
+                || request.maxAppointments() > ClinicSchedule.MAX_APPOINTMENTS_PER_DAY) {
             throw new IllegalArgumentException(
-                    "Maximum appointments must be between 1 and 60."
-            );
-        }
-
-        if (request.minutesPerPatient() < 5
-                || request.minutesPerPatient() > 30) {
-            throw new IllegalArgumentException(
-                    "Minutes per patient must be between 5 and 30."
+                    "Maximum appointments must be between 1 and "
+                            + ClinicSchedule.MAX_APPOINTMENTS_PER_DAY + "."
             );
         }
 

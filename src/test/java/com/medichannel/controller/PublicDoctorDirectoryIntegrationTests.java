@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import com.medichannel.config.ClinicSchedule;
 import com.medichannel.entity.Appointment;
 import com.medichannel.entity.Doctor;
 import com.medichannel.entity.Patient;
@@ -201,7 +202,8 @@ class PublicDoctorDirectoryIntegrationTests {
         assertThat(live.get("defaultStartTime").asText()).isEqualTo("07:00:00");
         assertThat(live.get("defaultEndTime").asText()).isEqualTo("16:00:00");
         assertThat(live.get("defaultHours").asInt()).isEqualTo(8);
-        assertThat(live.get("minutesPerPatient").asInt()).isEqualTo(10);
+        assertThat(live.get("minutesPerPatient").asInt())
+                .isEqualTo(ClinicSchedule.MINUTES_PER_PATIENT);
         assertThat(live.get("consultationType").asText()).isEqualTo("PHYSICAL");
         assertThat(live.get("sessionStatus").asText()).isEqualTo("IN_PROGRESS");
         assertThat(live.get("nowServing").asInt())

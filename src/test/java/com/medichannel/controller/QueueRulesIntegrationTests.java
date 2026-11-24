@@ -12,6 +12,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.medichannel.config.ClinicSchedule;
@@ -24,6 +25,7 @@ import com.medichannel.entity.Role;
 import com.medichannel.entity.Specialisation;
 import com.medichannel.entity.User;
 import com.medichannel.enums.ConsultationType;
+import com.medichannel.enums.SessionStatus;
 import com.medichannel.repository.AppointmentRepository;
 import com.medichannel.repository.DoctorRepository;
 import com.medichannel.repository.DoctorSessionRepository;
@@ -42,7 +44,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Practical queue behaviour: a delay affects the delayed booking and everyone
  * behind it, a cancellation hands its place to the next patient, and no role
  * can cancel without recording a reason. Sessions always use the published
- * 07:00-16:00 clinic day with 10-minute slots.
+ * 07:00-16:00 clinic day with 5-minute default slots.
  */
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:postgresql://127.0.0.1:55432/medichannel_test",
@@ -88,6 +90,9 @@ class QueueRulesIntegrationTests {
     @Autowired
     private DoctorSessionService doctorSessionService;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @Test
     void delayAffectsOnlyTheDelayedBookingAndEveryoneBehindIt() {
         Fixture fixture = new Fixture("delay");
@@ -122,9 +127,11 @@ class QueueRulesIntegrationTests {
         assertThat(response.appointmentNumber()).isNotNull();
         assertThat(response.bookedAt()).isNotNull();
         assertThat(response.estimatedConsultationTime()).isNotNull();
-        assertThat(response.minutesPerPatient()).isEqualTo(10);
+        assertThat(response.minutesPerPatient())
+                .isEqualTo(ClinicSchedule.MINUTES_PER_PATIENT);
         assertThat(response.estimatedConsultationEndTime())
-                .isEqualTo(response.estimatedConsultationTime().plusMinutes(10));
+                .isEqualTo(response.estimatedConsultationTime()
+                        .plusMinutes(ClinicSchedule.MINUTES_PER_PATIENT));
     }
 
     @Test
@@ -157,7 +164,9 @@ class QueueRulesIntegrationTests {
                 .orElseThrow()
                 .estimatedConsultationTime();
 
-        assertThat(after).isEqualTo(before.minusMinutes(10));
+        assertThat(after).isEqualTo(before.minusMinutes(
+                ClinicSchedule.MINUTES_PER_PATIENT
+        ));
     }
 
     @Test
@@ -183,7 +192,7 @@ class QueueRulesIntegrationTests {
     }
 
     @Test
-    void sessionsMustCoverThePublishedClinicDayWithTenMinuteSlots() {
+    void sessionsMustCoverThePublishedClinicDayWithConfigurableSlots() {
         Fixture fixture = new Fixture("schedule");
 
         assertThatThrownBy(() -> doctorSessionService.createSession(
@@ -217,6 +226,98 @@ class QueueRulesIntegrationTests {
 
         assertThat(created.startTime()).isEqualTo(ClinicSchedule.START_TIME);
         assertThat(created.endTime()).isEqualTo(ClinicSchedule.END_TIME);
+    }
+
+    @Test
+    void capacityAndSlotRulesAcceptThePublishedRanges() {
+        Fixture fixture = new Fixture("limits");
+        LocalDate base = LocalDate.now(ZoneId.of("Asia/Colombo")).plusDays(50);
+
+        var smallest = doctorSessionService.createSession(
+                sessionRequest(fixture, base, 1, 5)
+        );
+        var largest = doctorSessionService.createSession(
+                sessionRequest(fixture, base.plusDays(1), 60, 9)
+        );
+        var longestSlot = doctorSessionService.createSession(
+                sessionRequest(fixture, base.plusDays(2), 12, 30)
+        );
+
+        assertThat(smallest.maxAppointments()).isEqualTo(1);
+        assertThat(largest.maxAppointments()).isEqualTo(60);
+        assertThat(longestSlot.minutesPerPatient()).isEqualTo(30);
+    }
+
+    @Test
+    void capacityAndSlotRulesRejectValuesOutsideThePublishedRanges() {
+        Fixture fixture = new Fixture("limits-bad");
+        LocalDate base = LocalDate.now(ZoneId.of("Asia/Colombo")).plusDays(60);
+
+        assertThatThrownBy(() -> doctorSessionService.createSession(
+                sessionRequest(fixture, base, 0, 5)
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("between 1 and 60");
+
+        assertThatThrownBy(() -> doctorSessionService.createSession(
+                sessionRequest(fixture, base.plusDays(1), 61, 5)
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("between 1 and 60");
+
+        assertThatThrownBy(() -> doctorSessionService.createSession(
+                sessionRequest(fixture, base.plusDays(2), 1, 4)
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("between 5 and 30");
+
+        assertThatThrownBy(() -> doctorSessionService.createSession(
+                sessionRequest(fixture, base.plusDays(3), 1, 31)
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("between 5 and 30");
+    }
+
+    @Test
+    void sessionsAreNeverDeletedOnlyStatusChanged() {
+        Fixture fixture = new Fixture("retained");
+        UUID sessionId = fixture.session.getId();
+
+        Integer triggers = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM pg_trigger "
+                        + "WHERE tgname = 'trg_protect_doctor_session_history' "
+                        + "AND NOT tgisinternal",
+                Integer.class
+        );
+        assertThat(triggers).isEqualTo(1);
+
+        doctorSessionService.cancelSession(
+                sessionId,
+                fixture.managerId,
+                "MANAGER",
+                "Clinic closed"
+        );
+
+        assertThat(doctorSessionRepository.findById(sessionId))
+                .isPresent()
+                .get()
+                .extracting(DoctorSession::getStatus)
+                .isEqualTo(SessionStatus.CANCELLED);
+    }
+
+    private DoctorSessionRequest sessionRequest(
+            Fixture fixture,
+            LocalDate date,
+            int maxAppointments,
+            int minutesPerPatient
+    ) {
+        return new DoctorSessionRequest(
+                fixture.doctor.getId(),
+                null,
+                date,
+                ClinicSchedule.START_TIME,
+                ClinicSchedule.END_TIME,
+                ConsultationType.ONLINE,
+                maxAppointments,
+                minutesPerPatient,
+                new BigDecimal("1500.00")
+        );
     }
 
     private Appointment reload(Appointment appointment) {
