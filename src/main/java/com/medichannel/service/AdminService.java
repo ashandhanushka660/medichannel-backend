@@ -499,9 +499,10 @@ public class AdminService {
         );
         user.unlock();
         user.incrementTokenVersion();
-        // The new password is a temporary credential: no access token is
-        // issued until the account owner completes /auth/change-password.
-        user.requirePasswordChange();
+        // The account can sign in immediately with the new password. Resetting
+        // a password must never leave staff blocked behind a forced-change
+        // screen, because password resets are administrator-only.
+        user.clearPasswordChangeRequired();
 
         User saved = userRepository.saveAndFlush(user);
 

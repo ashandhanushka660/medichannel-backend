@@ -18,7 +18,6 @@ import com.medichannel.dto.auth.RegisterRequest;
 import com.medichannel.dto.auth.RegisterResponse;
 import com.medichannel.entity.Role;
 import com.medichannel.entity.User;
-import com.medichannel.exception.ForbiddenOperationException;
 import com.medichannel.exception.InvalidCredentialsException;
 import com.medichannel.repository.RoleRepository;
 import com.medichannel.repository.UserRepository;
@@ -201,35 +200,9 @@ public class AuthService {
             throw new InvalidCredentialsException();
         }
 
-        // A reset staff password is a temporary credential. Do not issue a
-        // normal access token until the owner has chosen a replacement.
-        if (optionalUser.get().isPasswordChangeRequired()) {
-            auditLogin(
-                    optionalUser.get().getId(),
-                    null,
-                    "LOGIN_FORCED_PASSWORD_CHANGE",
-                    "Password change required"
-            );
-            throw new ForbiddenOperationException(
-                    "A password change is required before signing in."
-            );
-        }
-
         // Rechecks account status and lock state under a database lock.
         User authenticatedUser =
                 loginAttemptService.recordSuccessfulAttempt(normalizedEmail);
-
-        if (authenticatedUser.isPasswordChangeRequired()) {
-            auditLogin(
-                    authenticatedUser.getId(),
-                    null,
-                    "LOGIN_FORCED_PASSWORD_CHANGE",
-                    "Password change required"
-            );
-            throw new ForbiddenOperationException(
-                    "A password change is required before signing in."
-            );
-        }
 
         String roleName = authenticatedUser.getRole().getName();
 

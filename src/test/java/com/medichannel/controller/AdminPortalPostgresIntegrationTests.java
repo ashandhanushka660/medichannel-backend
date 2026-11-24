@@ -429,6 +429,95 @@ class AdminPortalPostgresIntegrationTests {
     }
 
     @Test
+    void doctorsCreatedByAdminCanSignInWithoutAForcedPasswordChange()
+            throws Exception {
+
+        TestFixture fixture = createFixture();
+        String unique = UUID.randomUUID().toString().replace("-", "");
+        String email = "login.doctor." + unique + "@example.test";
+        String initialPassword = "InitialPass12345!";
+        String resetPassword = "ResetPass12345!";
+
+        Specialisation specialisation = specialisationRepository
+                .saveAndFlush(new Specialisation(
+                        "Login Test " + unique,
+                        "Temporary login test"
+                ));
+
+        String createBody = objectMapper.writeValueAsString(
+                java.util.Map.of(
+                        "email", email,
+                        "initialPassword", initialPassword,
+                        "confirmPassword", initialPassword,
+                        "firstName", "Login",
+                        "lastName", "Doctor",
+                        "registrationNumber", "LOGIN-" + unique,
+                        "qualification", "MBBS",
+                        "specialisationId", specialisation.getId(),
+                        "consultationFee", new BigDecimal("2000.00")
+                )
+        );
+
+        String created = mockMvc.perform(
+                post("/api/v1/doctors")
+                        .with(adminJwt(fixture.adminUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody)
+        )
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        UUID doctorUserId = UUID.fromString(
+                objectMapper.readTree(created).get("userId").asText()
+        );
+
+        mockMvc.perform(
+                post(AUTH_URL + "/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                java.util.Map.of(
+                                        "email", email,
+                                        "password", initialPassword
+                                )
+                        ))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
+
+        String resetBody = objectMapper.writeValueAsString(
+                java.util.Map.of(
+                        "newPassword", resetPassword,
+                        "confirmPassword", resetPassword
+                )
+        );
+
+        mockMvc.perform(
+                post(ADMIN_URL + "/users/" + doctorUserId + "/reset-password")
+                        .with(adminJwt(fixture.adminUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(resetBody)
+        ).andExpect(status().isOk());
+
+        mockMvc.perform(
+                post(AUTH_URL + "/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                java.util.Map.of(
+                                        "email", email,
+                                        "password", resetPassword
+                                )
+                        ))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
+
+        assertThat(userRepository.findByEmail(email).orElseThrow()
+                .isPasswordChangeRequired()).isFalse();
+    }
+
+    @Test
     void adminUserFiltersAcceptOnlyKnownRoles() throws Exception {
 
         TestFixture fixture = createFixture();

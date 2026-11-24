@@ -128,8 +128,7 @@ public class WebSocketJwtInterceptor implements ChannelInterceptor {
             }
 
             if (!"ACTIVE".equals(user.getAccountStatus())
-                    || !user.isEmailVerified()
-                    || user.isPasswordChangeRequired()) {
+                    || !user.isEmailVerified()) {
                 throw new MessageDeliveryException(
                         message,
                         "This account is not permitted to connect."

@@ -529,8 +529,7 @@ public class SecurityConfig {
                 UUID userId = UUID.fromString(subject);
                 var userOpt = userRepository.findById(userId);
                 if (userOpt.isEmpty() || userOpt.get().getTokenVersion() != verNum.intValue()
-                        || !"ACTIVE".equals(userOpt.get().getAccountStatus())
-                        || userOpt.get().isPasswordChangeRequired()) {
+                        || !"ACTIVE".equals(userOpt.get().getAccountStatus())) {
                     return OAuth2TokenValidatorResult.failure(
                             new OAuth2Error(
                                     "invalid_token",
@@ -624,8 +623,7 @@ public class SecurityConfig {
                 if (userOpt.isEmpty()
                         || userOpt.get().getTokenVersion() != verNum.intValue()
                         || !"ACTIVE".equals(userOpt.get().getAccountStatus())
-                        || !userOpt.get().isEmailVerified()
-                        || userOpt.get().isPasswordChangeRequired()) {
+                        || !userOpt.get().isEmailVerified()) {
                     return OAuth2TokenValidatorResult.failure(
                             new OAuth2Error(
                                     "invalid_token",

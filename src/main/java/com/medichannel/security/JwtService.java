@@ -95,8 +95,7 @@ public class JwtService {
                 ));
 
         if (!"ACTIVE".equals(user.getAccountStatus())
-                || !user.isEmailVerified()
-                || user.isPasswordChangeRequired()) {
+                || !user.isEmailVerified()) {
             throw new ForbiddenOperationException(
                     "WebSocket access is not permitted."
             );

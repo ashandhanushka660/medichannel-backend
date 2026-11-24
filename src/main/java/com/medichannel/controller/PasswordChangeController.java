@@ -13,11 +13,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Completes an administrator-initiated staff password reset.
+ * Optional self-service password change for an account owner.
  *
- * The endpoint is intentionally token-free: a forced user receives no access
- * token from /login, and existing tokens are rejected while the flag is set.
- * Knowledge of the temporary password proves ownership of the account.
+ * The endpoint is intentionally token-free: knowledge of the current password
+ * proves ownership. Administrator password resets do not force users through
+ * this flow; staff can sign in immediately with the reset password.
  */
 @RestController
 @RequestMapping("/api/v1/auth")
