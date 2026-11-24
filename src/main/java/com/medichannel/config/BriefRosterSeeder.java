@@ -21,7 +21,6 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.medichannel.dto.doctor.CreateDoctorRequest;
 import com.medichannel.dto.room.RoomRequest;
@@ -180,7 +179,7 @@ public class BriefRosterSeeder implements ApplicationRunner {
             JdbcTemplate jdbcTemplate,
             Clock clock,
             @Value("${APP_BRIEF_ROSTER_SEED:false}") boolean enabled,
-            @Value("${APP_BRIEF_ROSTER_WEEKS:26}") int publishedWeeks,
+            @Value("${APP_BRIEF_ROSTER_WEEKS:2}") int publishedWeeks,
             @Value("${APP_DEMO_PASSWORD:}") String demoPassword
     ) {
         this.userRepository = userRepository;
@@ -200,8 +199,9 @@ public class BriefRosterSeeder implements ApplicationRunner {
         this.demoPassword = demoPassword;
     }
 
+    // No outer transaction: each service call commits its own work so a long
+    // roster build cannot hold a pooled database connection open for minutes.
     @Override
-    @Transactional
     public void run(ApplicationArguments args) {
         if (!enabled) {
             logger.info(

@@ -11,11 +11,15 @@ Asia/Colombo Monday–Sunday week; it is never hardcoded.
 release, then disable it again:
 
 ```bash
-heroku config:set APP_BRIEF_ROSTER_SEED=true --app evening-plains-20028
+heroku config:set APP_BRIEF_ROSTER_SEED=true APP_BRIEF_ROSTER_WEEKS=2 --app evening-plains-20028
 git push heroku main
 heroku logs --tail --app evening-plains-20028 | grep -i "Brief roster"
-heroku config:unset APP_BRIEF_ROSTER_SEED --app evening-plains-20028
+heroku config:unset APP_BRIEF_ROSTER_SEED APP_BRIEF_ROSTER_WEEKS --app evening-plains-20028
 ```
+
+The default horizon is two weeks. This is enough to satisfy the briefing
+statistic without holding a database transaction open for the six-month demo
+horizon. Each service call commits independently, so the run is resumable.
 
 `APP_DEMO_PASSWORD` must already be set. The runner reuses deterministic demo
 doctor identities, creates only the missing specialisations/doctors/sessions,
