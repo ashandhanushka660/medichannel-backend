@@ -475,6 +475,7 @@ class AdminPortalPostgresIntegrationTests {
 
         mockMvc.perform(
                 post(AUTH_URL + "/login")
+                        .header("X-Forwarded-For", "198.51.100.77")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 java.util.Map.of(
@@ -502,6 +503,7 @@ class AdminPortalPostgresIntegrationTests {
 
         mockMvc.perform(
                 post(AUTH_URL + "/login")
+                        .header("X-Forwarded-For", "198.51.100.77")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 java.util.Map.of(
