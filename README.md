@@ -18,9 +18,9 @@ The backend provides REST APIs, authentication, business logic, database operati
 
 ## Deployment Architecture
 
-- Backend hosting: Render
-- Database hosting: Neon PostgreSQL
-- Frontend hosting: Netlify
+- Backend hosting: Heroku
+- Database hosting: Supabase PostgreSQL
+- Frontend hosting: Vercel
 
 ## User Roles
 
@@ -45,7 +45,7 @@ The backend provides REST APIs, authentication, business logic, database operati
 
 ## Database
 
-The system uses PostgreSQL hosted on Neon.
+The system uses PostgreSQL hosted on Supabase.
 
 Database schema changes will be managed through Flyway migration files.
 
@@ -55,17 +55,17 @@ Never commit database passwords, connection strings, encryption keys, JWT secret
 
 ### Run locally
 
-1. Copy `.env.example` to `.env` and set the Neon development branch's direct
-   (non-pooler) JDBC host, database role, password, and three distinct
-   Base64-encoded 32-byte secrets. Do not commit `.env`.
+1. Copy `.env.example` to `.env` and set the Supabase Session pooler JDBC host,
+   database role, password, and three distinct Base64-encoded 32-byte secrets.
+   Do not commit `.env`.
 2. Start the backend with the `dev` profile:
 
        SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run
 
 The backend listens on port 8080 by default. Flyway applies pending migrations
-at application startup, so use the Neon `development` branch for local testing.
-Do not point a first deployment at `production` until reviewing and validating
-the pending migrations.
+at application startup, so use a disposable Supabase project or a local
+PostgreSQL database for testing. Do not point a first deployment at
+`production` until reviewing and validating the pending migrations.
 
 ## Environment Variables
 
@@ -81,22 +81,34 @@ These are example placeholders only. Use your own development credentials.
 
 Do not commit `.env` or any file containing real credentials.
 
-## Deploy to Render
+## Deploy to Heroku
 
-The root `render.yaml` defines a Docker-based web service and uses
-`/actuator/health` as its health check. In Render, create a Blueprint from this
-repository and provide the prompted environment variables:
+The repository includes `system.properties` (Java 21) and a `Procfile` web
+process. Create the app, set the config vars, then push:
 
-- `DB_URL`: JDBC URL for Neon database `neondb`, using the direct/non-pooler
-  host and `sslmode=require`. The backend runs Flyway at startup, which should
-  use a direct Neon connection.
-- `DB_USERNAME` and `DB_PASSWORD`: credentials for a Neon role allowed to run
-  the Flyway migrations and serve the application.
+    heroku create <app-name>
+    heroku config:set -a <app-name> \
+      DB_URL='jdbc:postgresql://aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require' \
+      DB_USERNAME='postgres.<project-ref>' \
+      DB_PASSWORD='...' \
+      JWT_SECRET='...' ENCRYPTION_KEY='...' HMAC_SECRET='...' \
+      APP_FRONTEND_ORIGIN='https://<your-vercel-domain>' \
+      SPRING_PROFILES_ACTIVE=prod
+    git push heroku main
+
+Provide these config vars:
+
+- `DB_URL`: JDBC URL for Supabase, using the **Session pooler** host and
+  `sslmode=require`. The direct `db.<ref>.supabase.co` host is IPv6-only and
+  Heroku cannot reach it. `DB_USERNAME` is `postgres.<project-ref>`.
+- `DB_USERNAME` and `DB_PASSWORD`: Supabase credentials allowed to run the
+  Flyway migrations and serve the application.
 - `JWT_SECRET`, `ENCRYPTION_KEY`, and `HMAC_SECRET`: three separate
   Base64-encoded 32-byte secrets. Generate each independently with
-  `openssl rand -base64 32`.
+  `openssl rand -base64 32`. `ENCRYPTION_KEY` encrypts patient identifiers at
+  rest and must never be changed once data exists.
 - `APP_FRONTEND_ORIGIN`: exact deployed frontend origin, without a path or
-  wildcard (for example `https://medichannel.netlify.app`).
+  wildcard (for example `https://medichannel-f-p3z5.vercel.app`).
 - `APP_ADMIN_EMAIL` and `APP_ADMIN_PASSWORD`: used once to bootstrap the first
   ADMIN account. The password must contain at least 8 characters, including a
   letter, a number and a symbol. Remove or rotate these values after the first
@@ -105,13 +117,10 @@ repository and provide the prompted environment variables:
   isolated staging database and also provide `APP_DEMO_PASSWORD` (8+ characters
   with a letter, a number and a symbol).
 
-The blueprint deploys the `main` branch and uses the `prod` profile. Render
-supplies `PORT`; Spring Boot binds to it automatically. Flyway
-runs every unapplied migration included in the deployed artifact (currently
-V1–V15), so verify all migration files are committed and test them against a
-disposable database before deploying. The free Render plan may suspend the
-service while idle; change the plan in Render if always-on availability is
-required.
+Heroku supplies `PORT`; Spring Boot binds to it automatically. Flyway runs
+every unapplied migration included in the deployed artifact (currently V1–V25),
+so verify all migration files are committed and test them against a disposable
+database before deploying. Check `/actuator/health` after the first deploy.
 
 ## Team Development
 
