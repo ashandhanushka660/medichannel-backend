@@ -3,6 +3,7 @@ package com.medichannel.service;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +29,7 @@ import com.medichannel.entity.Patient;
 import com.medichannel.entity.Role;
 import com.medichannel.entity.User;
 import com.medichannel.enums.AppointmentStatus;
+import com.medichannel.enums.ConsultationPeriod;
 import com.medichannel.enums.ConsultationType;
 import com.medichannel.enums.NotificationType;
 import com.medichannel.enums.PaymentStatus;
@@ -109,6 +111,7 @@ public class AppointmentService {
         Patient patient = getEligiblePatient(authenticatedUserId);
 
         DoctorSession session = findBookableSession(request.sessionId(), true);
+        validateRequestedPeriod(session, request.period());
         return createAppointment(session, patient, request.reason());
     }
 
@@ -165,6 +168,27 @@ public class AppointmentService {
 
         validateSessionCanBeBooked(session, enforcePublishedSchedule);
         return session;
+    }
+
+    /**
+     * The period chosen in the expanded booking panel must match the
+     * published window of the selected session. This prevents a client from
+     * issuing a number for one period against a session in another period.
+     */
+    private void validateRequestedPeriod(
+            DoctorSession session,
+            ConsultationPeriod requestedPeriod
+    ) {
+        ConsultationPeriod sessionPeriod =
+                ClinicSchedule.periodFor(session.getStartTime());
+
+        if (requestedPeriod == null || sessionPeriod == null
+                || requestedPeriod != sessionPeriod) {
+            throw new IllegalArgumentException(
+                    "The selected period does not match this session. "
+                            + "Morning is 07:00–11:00; Evening is 13:00–15:00."
+            );
+        }
     }
 
     private AppointmentResponse createAppointment(
@@ -1319,6 +1343,16 @@ public class AppointmentService {
                             + "or does not use a "
                             + ClinicSchedule.MINUTES_PER_PATIENT
                             + "-minute patient slot."
+            );
+        }
+
+        LocalTime nowTime = LocalTime.now(
+                clock.withZone(TimeConfiguration.APPLICATION_ZONE)
+        );
+        if (ClinicSchedule.isBreak(nowTime)) {
+            throw new ConflictException(
+                    "Appointment numbers are not issued during the "
+                            + "11:00–13:00 break. Please book outside the break."
             );
         }
 

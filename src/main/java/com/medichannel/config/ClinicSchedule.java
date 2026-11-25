@@ -4,21 +4,23 @@ import java.time.LocalTime;
 
 import com.medichannel.entity.DoctorSession;
 import com.medichannel.enums.ConsultationType;
+import com.medichannel.enums.ConsultationPeriod;
 
 /**
  * The hospital's published consultation schedule. This is the single source
  * of truth shared by session creation, patient booking and the public doctor
  * directory: only the two daily windows below are bookable.
  *
- * The 07:00-16:00 envelope remains as the hospital-day display value; the
- * lunch gap between the sessions is not itself bookable.
+ * The 07:00-16:00 envelope remains as the hospital-day display value. The
+ * 11:00-13:00 lunch break between the sessions is not itself bookable and
+ * never issues appointment numbers.
  */
 public final class ClinicSchedule {
 
     public static final LocalTime MORNING_START = LocalTime.of(7, 0);
-    public static final LocalTime MORNING_END = LocalTime.of(9, 30);
-    public static final LocalTime AFTERNOON_START = LocalTime.of(12, 0);
-    public static final LocalTime AFTERNOON_END = LocalTime.of(14, 30);
+    public static final LocalTime MORNING_END = LocalTime.of(11, 0);
+    public static final LocalTime EVENING_START = LocalTime.of(13, 0);
+    public static final LocalTime EVENING_END = LocalTime.of(15, 0);
 
     // Hospital-day envelope shown in the public directory.
     public static final LocalTime START_TIME = MORNING_START;
@@ -61,16 +63,16 @@ public final class ClinicSchedule {
 
     public static boolean isAllowedWindow(LocalTime start, LocalTime end) {
         return (MORNING_START.equals(start) && MORNING_END.equals(end))
-                || (AFTERNOON_START.equals(start)
-                        && AFTERNOON_END.equals(end));
+                || (EVENING_START.equals(start)
+                        && EVENING_END.equals(end));
     }
 
     public static String allowedWindowLabel() {
-        return "07:00–09:30 or 12:00–14:30";
+        return "07:00–11:00 or 13:00–15:00";
     }
 
     /**
-     * End of the period filter value sent by the UI. The two published
+     * End of the period filter value sent by the API. The two published
      * sessions have their own ends; an unknown value keeps the old hourly
      * behaviour so bad input cannot widen the results.
      */
@@ -81,10 +83,34 @@ public final class ClinicSchedule {
         if (MORNING_START.equals(period)) {
             return MORNING_END;
         }
-        if (AFTERNOON_START.equals(period)) {
-            return AFTERNOON_END;
+        if (EVENING_START.equals(period)) {
+            return EVENING_END;
         }
         return period.plusHours(1);
+    }
+
+    /**
+     * The published period for a session start. Only the two exact start
+     * times are valid; null means the session is outside the roster.
+     */
+    public static ConsultationPeriod periodFor(LocalTime start) {
+        if (MORNING_START.equals(start)) {
+            return ConsultationPeriod.MORNING;
+        }
+        if (EVENING_START.equals(start)) {
+            return ConsultationPeriod.EVENING;
+        }
+        return null;
+    }
+
+    /**
+     * No appointment number is issued while the clinic is on its lunch break.
+     * The boundary is inclusive at 11:00 and exclusive at 13:00.
+     */
+    public static boolean isBreak(LocalTime now) {
+        return now != null
+                && !now.isBefore(MORNING_END)
+                && now.isBefore(EVENING_START);
     }
 
     /**

@@ -160,8 +160,8 @@ class PatientBookingCongruenceIntegrationTests {
         DoctorSession unavailableDoctorSession = createSession(
                 unavailableDoctor,
                 date.plusDays(3),
-                ClinicSchedule.AFTERNOON_START,
-                ClinicSchedule.AFTERNOON_END,
+                ClinicSchedule.EVENING_START,
+                ClinicSchedule.EVENING_END,
                 5
         );
 
@@ -218,7 +218,7 @@ class PatientBookingCongruenceIntegrationTests {
                         .with(customerJwt(patientUser.getId()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"sessionId":"%s","reason":"Follow-up review"}
+                                {"sessionId":"%s","reason":"Follow-up review","period":"MORNING"}
                                 """.formatted(eligible.getId()))
         )
                 .andExpect(status().isCreated())
@@ -254,6 +254,16 @@ class PatientBookingCongruenceIntegrationTests {
             assertThat(item.get("appointmentNumber").asInt()).isEqualTo(1);
         });
 
+        // A period choice must match the selected session's published window.
+        mockMvc.perform(
+                post("/api/v1/appointments")
+                        .with(customerJwt(patientUser.getId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"sessionId":"%s","reason":"Wrong period","period":"EVENING"}
+                                """.formatted(eligible.getId()))
+        ).andExpect(status().isBadRequest());
+
         // A direct booking attempt cannot bypass the published schedule or
         // book a doctor the guest dashboard marks unavailable.
         mockMvc.perform(
@@ -261,7 +271,7 @@ class PatientBookingCongruenceIntegrationTests {
                         .with(customerJwt(patientUser.getId()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"sessionId":"%s","reason":"Evening review"}
+                                {"sessionId":"%s","reason":"Evening review","period":"MORNING"}
                                 """.formatted(outsideHours.getId()))
         ).andExpect(status().isConflict());
 
@@ -270,7 +280,7 @@ class PatientBookingCongruenceIntegrationTests {
                         .with(customerJwt(patientUser.getId()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"sessionId":"%s","reason":"Offline doctor"}
+                                {"sessionId":"%s","reason":"Offline doctor","period":"EVENING"}
                                 """.formatted(unavailableDoctorSession.getId()))
         ).andExpect(status().isConflict());
 
@@ -318,8 +328,8 @@ class PatientBookingCongruenceIntegrationTests {
         DoctorSession afternoon = createSession(
                 doctor,
                 date,
-                ClinicSchedule.AFTERNOON_START,
-                ClinicSchedule.AFTERNOON_END,
+                ClinicSchedule.EVENING_START,
+                ClinicSchedule.EVENING_END,
                 5
         );
 
@@ -335,7 +345,7 @@ class PatientBookingCongruenceIntegrationTests {
                 .doesNotContain(afternoon.getId().toString());
 
         JsonNode afternoonResults = objectMapper.readTree(
-                mockMvc.perform(get("/api/v1/sessions").param("period", "12:00"))
+                mockMvc.perform(get("/api/v1/sessions").param("period", "13:00"))
                         .andExpect(status().isOk())
                         .andReturn()
                         .getResponse()
@@ -346,7 +356,7 @@ class PatientBookingCongruenceIntegrationTests {
                 .doesNotContain(morning.getId().toString());
 
         JsonNode lunchGapResults = objectMapper.readTree(
-                mockMvc.perform(get("/api/v1/sessions").param("period", "09:30"))
+                mockMvc.perform(get("/api/v1/sessions").param("period", "11:00"))
                         .andExpect(status().isOk())
                         .andReturn()
                         .getResponse()
@@ -398,8 +408,8 @@ class PatientBookingCongruenceIntegrationTests {
         DoctorSession physicalBookable = createSession(
                 physicalBookableDoctor,
                 today,
-                ClinicSchedule.AFTERNOON_START,
-                ClinicSchedule.AFTERNOON_END,
+                ClinicSchedule.EVENING_START,
+                ClinicSchedule.EVENING_END,
                 5,
                 ConsultationType.PHYSICAL
         );
@@ -414,8 +424,8 @@ class PatientBookingCongruenceIntegrationTests {
         DoctorSession onlineBookable = createSession(
                 onlineBookableDoctor,
                 today,
-                ClinicSchedule.AFTERNOON_START,
-                ClinicSchedule.AFTERNOON_END,
+                ClinicSchedule.EVENING_START,
+                ClinicSchedule.EVENING_END,
                 5,
                 ConsultationType.ONLINE
         );
@@ -443,8 +453,8 @@ class PatientBookingCongruenceIntegrationTests {
                 null,
                 ClinicSchedule.MORNING_START,
                 ClinicSchedule.MORNING_END,
-                ClinicSchedule.AFTERNOON_START,
-                ClinicSchedule.AFTERNOON_END,
+                ClinicSchedule.EVENING_START,
+                ClinicSchedule.EVENING_END,
                 ClinicSchedule.MINUTES_PER_PATIENT,
                 ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
                 List.of(

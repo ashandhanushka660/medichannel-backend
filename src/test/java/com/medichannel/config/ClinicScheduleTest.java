@@ -4,6 +4,7 @@ import java.time.LocalTime;
 
 import org.junit.jupiter.api.Test;
 
+import com.medichannel.enums.ConsultationPeriod;
 import com.medichannel.enums.ConsultationType;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,19 +43,19 @@ class ClinicScheduleTest {
     void onlyTheTwoPublishedWindowsAreAllowed() {
         assertThat(ClinicSchedule.isAllowedWindow(
                 LocalTime.of(7, 0),
-                LocalTime.of(9, 30)
+                LocalTime.of(11, 0)
         )).isTrue();
         assertThat(ClinicSchedule.isAllowedWindow(
-                LocalTime.of(12, 0),
-                LocalTime.of(14, 30)
+                LocalTime.of(13, 0),
+                LocalTime.of(15, 0)
         )).isTrue();
         assertThat(ClinicSchedule.isAllowedWindow(
                 LocalTime.of(7, 0),
                 LocalTime.of(16, 0)
         )).isFalse();
         assertThat(ClinicSchedule.isAllowedWindow(
-                LocalTime.of(9, 30),
-                LocalTime.of(12, 0)
+                LocalTime.of(11, 0),
+                LocalTime.of(13, 0)
         )).isFalse();
     }
 
@@ -63,9 +64,23 @@ class ClinicScheduleTest {
         assertThat(ClinicSchedule.periodEnd(null))
                 .isEqualTo(LocalTime.of(23, 59, 59));
         assertThat(ClinicSchedule.periodEnd(LocalTime.of(7, 0)))
-                .isEqualTo(LocalTime.of(9, 30));
-        assertThat(ClinicSchedule.periodEnd(LocalTime.of(12, 0)))
-                .isEqualTo(LocalTime.of(14, 30));
+                .isEqualTo(LocalTime.of(11, 0));
+        assertThat(ClinicSchedule.periodEnd(LocalTime.of(13, 0)))
+                .isEqualTo(LocalTime.of(15, 0));
+    }
+
+    @Test
+    void lunchBreakIsClosedAndMapsEachPublishedStartToItsPeriod() {
+        assertThat(ClinicSchedule.isBreak(LocalTime.of(10, 59))).isFalse();
+        assertThat(ClinicSchedule.isBreak(LocalTime.of(11, 0))).isTrue();
+        assertThat(ClinicSchedule.isBreak(LocalTime.of(12, 59))).isTrue();
+        assertThat(ClinicSchedule.isBreak(LocalTime.of(13, 0))).isFalse();
+
+        assertThat(ClinicSchedule.periodFor(LocalTime.of(7, 0)))
+                .isEqualTo(ConsultationPeriod.MORNING);
+        assertThat(ClinicSchedule.periodFor(LocalTime.of(13, 0)))
+                .isEqualTo(ConsultationPeriod.EVENING);
+        assertThat(ClinicSchedule.periodFor(LocalTime.of(11, 0))).isNull();
     }
 
     @Test

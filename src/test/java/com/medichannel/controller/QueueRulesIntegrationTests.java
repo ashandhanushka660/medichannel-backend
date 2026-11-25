@@ -185,8 +185,8 @@ class QueueRulesIntegrationTests {
                 sessionRequest(
                         fixture,
                         date,
-                        ClinicSchedule.AFTERNOON_START,
-                        ClinicSchedule.AFTERNOON_END,
+                        ClinicSchedule.EVENING_START,
+                        ClinicSchedule.EVENING_END,
                         ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
                         ClinicSchedule.MINUTES_PER_PATIENT
                 )
@@ -205,7 +205,7 @@ class QueueRulesIntegrationTests {
         assertThat(estimateFor(fixture.patient(30), morning.get(29)))
                 .isEqualTo(LocalDateTime.of(date, LocalTime.of(9, 25)));
         assertThat(estimateFor(fixture.patient(31), firstAfternoon))
-                .isEqualTo(LocalDateTime.of(date, LocalTime.of(12, 0)));
+                .isEqualTo(LocalDateTime.of(date, LocalTime.of(13, 0)));
 
         appointmentService.delayAppointmentQueue(
                 fixture.managerId,
@@ -219,7 +219,7 @@ class QueueRulesIntegrationTests {
         assertThat(estimateFor(fixture.patient(30), morning.get(29)))
                 .isEqualTo(LocalDateTime.of(date, LocalTime.of(9, 45)));
         assertThat(estimateFor(fixture.patient(31), firstAfternoon))
-                .isEqualTo(LocalDateTime.of(date, LocalTime.of(12, 0)));
+                .isEqualTo(LocalDateTime.of(date, LocalTime.of(13, 0)));
     }
 
     @Test
@@ -277,8 +277,8 @@ class QueueRulesIntegrationTests {
                 sessionRequest(
                         fixture,
                         LocalDate.now(ZoneId.of("Asia/Colombo")).plusDays(42),
-                        ClinicSchedule.AFTERNOON_START,
-                        ClinicSchedule.AFTERNOON_END,
+                        ClinicSchedule.EVENING_START,
+                        ClinicSchedule.EVENING_END,
                         ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
                         ClinicSchedule.MINUTES_PER_PATIENT
                 )
@@ -288,9 +288,9 @@ class QueueRulesIntegrationTests {
                 .isEqualTo(ClinicSchedule.MORNING_START);
         assertThat(morning.endTime()).isEqualTo(ClinicSchedule.MORNING_END);
         assertThat(afternoon.startTime())
-                .isEqualTo(ClinicSchedule.AFTERNOON_START);
+                .isEqualTo(ClinicSchedule.EVENING_START);
         assertThat(afternoon.endTime())
-                .isEqualTo(ClinicSchedule.AFTERNOON_END);
+                .isEqualTo(ClinicSchedule.EVENING_END);
     }
 
     @Test
@@ -312,8 +312,8 @@ class QueueRulesIntegrationTests {
                 sessionRequest(
                         fixture,
                         date,
-                        ClinicSchedule.AFTERNOON_START,
-                        ClinicSchedule.AFTERNOON_END,
+                        ClinicSchedule.EVENING_START,
+                        ClinicSchedule.EVENING_END,
                         ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
                         ClinicSchedule.MINUTES_PER_PATIENT
                 )

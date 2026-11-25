@@ -885,7 +885,8 @@ class ConsultationLifecyclePostgresIntegrationTests {
                         .content(objectMapper.writeValueAsString(
                                 java.util.Map.of(
                                         "sessionId", sessionId,
-                                        "reason", "Integration test visit"
+                                        "reason", "Integration test visit",
+                                        "period", "MORNING"
                                 )
                         ))
         )

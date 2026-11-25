@@ -740,7 +740,8 @@ class AppointmentApiPostgresIntegrationTests {
             return objectMapper.writeValueAsString(
                     java.util.Map.of(
                             "sessionId", sessionId,
-                            "reason", reason
+                            "reason", reason,
+                            "period", "MORNING"
                     )
             );
         } catch (Exception exception) {

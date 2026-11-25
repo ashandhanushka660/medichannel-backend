@@ -553,7 +553,8 @@ class AdminPortalPostgresIntegrationTests {
                         .content(objectMapper.writeValueAsString(
                                 java.util.Map.of(
                                         "sessionId", fixture.sessionId(),
-                                        "reason", "Admin integration test"
+                                        "reason", "Admin integration test",
+                                        "period", "MORNING"
                                 )
                         ))
         )

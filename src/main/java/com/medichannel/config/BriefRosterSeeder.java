@@ -520,8 +520,8 @@ public class BriefRosterSeeder implements ApplicationRunner {
                         ClinicSchedule.MORNING_END
                 },
                 new LocalTime[] {
-                        ClinicSchedule.AFTERNOON_START,
-                        ClinicSchedule.AFTERNOON_END
+                        ClinicSchedule.EVENING_START,
+                        ClinicSchedule.EVENING_END
                 }
         );
     }

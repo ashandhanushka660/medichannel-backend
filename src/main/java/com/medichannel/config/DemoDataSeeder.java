@@ -810,7 +810,7 @@ public class DemoDataSeeder implements ApplicationRunner {
 
     /**
      * Forty available doctors each receive two published sessions on each of
-     * three days per week for 26 weeks: 07:00–09:30 and 12:00–14:30, with 30
+     * three days per week for 26 weeks: 07:00–11:00 and 13:00–15:00, with 30
      * places and five-minute slots each, giving 60 places per doctor/day.
      */
     private void seedSessions(List<Doctor> doctors, List<Room> rooms) {
@@ -841,8 +841,8 @@ public class DemoDataSeeder implements ApplicationRunner {
                                 ClinicSchedule.MORNING_END
                         },
                         new LocalTime[] {
-                                ClinicSchedule.AFTERNOON_START,
-                                ClinicSchedule.AFTERNOON_END
+                                ClinicSchedule.EVENING_START,
+                                ClinicSchedule.EVENING_END
                         }
                 );
 

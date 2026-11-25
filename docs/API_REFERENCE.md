@@ -89,8 +89,15 @@ createdAt, updatedAt }`. PII is encrypted at rest.
 Booking request:
 
 ```json
-{ "sessionId": "uuid", "reason": "Persistent headache" }
+{
+  "sessionId": "uuid",
+  "reason": "Persistent headache",
+  "period": "MORNING"
+}
 ```
+
+`period` is required and must be `MORNING` (07:00–11:00) or `EVENING`
+(13:00–15:00). A mismatch with the selected session returns `400`.
 
 Response fields include `appointmentId`, `appointmentNumber`, `sessionDate`,
 `sessionStartTime`, `estimatedConsultationTime`, `status`, `paymentStatus`,
@@ -99,7 +106,8 @@ Response fields include `appointmentId`, `appointmentNumber`, `sessionDate`,
 
 Booking rules: session must be `OPEN`, before the booking deadline (60 min
 physical / 30 min online), capacity available, one active booking per patient
-per session.
+per session. No appointment number is issued during the 11:00–13:00 break;
+both patient and reception booking return `409` then.
 
 `PATCH /appointments/{appointmentId}/hide` is a non-destructive, participant-
 scoped visibility change. It is allowed only for `COMPLETED`, `NO_SHOW` or

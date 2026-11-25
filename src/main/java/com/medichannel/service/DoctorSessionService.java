@@ -3,7 +3,6 @@ package com.medichannel.service;
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -496,8 +495,8 @@ public class DoctorSessionService {
                 consultationType,
                 ClinicSchedule.MORNING_START,
                 ClinicSchedule.MORNING_END,
-                ClinicSchedule.AFTERNOON_START,
-                ClinicSchedule.AFTERNOON_END,
+                ClinicSchedule.EVENING_START,
+                ClinicSchedule.EVENING_END,
                 ClinicSchedule.MINUTES_PER_PATIENT,
                 ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
                 List.of(
@@ -660,15 +659,22 @@ public class DoctorSessionService {
             );
         }
 
-        long availableMinutes = Duration.between(
-                request.startTime(),
-                request.endTime()
-        ).toMinutes();
+        /*
+         * The two published windows start at 07:00 and 13:00. A full 30-patient
+         * evening session can run past 15:00, but the hospital-day envelope
+         * stays open until 16:00. Validate the last five-minute estimate
+         * against that envelope rather than against the shorter booking window.
+         */
+        LocalTime lastEstimateStart = request.startTime().plusMinutes(
+                (long) (request.maxAppointments() - 1)
+                        * request.minutesPerPatient()
+        );
 
-        if ((long) request.maxAppointments()
-                * request.minutesPerPatient() > availableMinutes) {
+        if (lastEstimateStart.plusMinutes(request.minutesPerPatient())
+                .isAfter(ClinicSchedule.END_TIME)) {
             throw new IllegalArgumentException(
-                    "The session duration is too short for the requested number of appointments."
+                    "The hospital day is too short for the requested number "
+                            + "of appointments."
             );
         }
 

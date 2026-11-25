@@ -26,6 +26,7 @@ import com.medichannel.entity.Role;
 import com.medichannel.entity.Room;
 import com.medichannel.entity.Specialisation;
 import com.medichannel.entity.User;
+import com.medichannel.enums.ConsultationPeriod;
 import com.medichannel.enums.ConsultationType;
 import com.medichannel.enums.RoomType;
 import com.medichannel.enums.SessionStatus;
@@ -45,9 +46,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Cutoffs come from each session's own start time, not from a doctor-wide
- * arrival/departure window. Fixed at 11:15 Asia/Colombo: the morning session
- * is closed for both modes, the afternoon physical session is closed, and the
- * afternoon online session is still bookable.
+ * arrival/departure window. Fixed at 10:00 Asia/Colombo: the morning session
+ * is closed for both modes, while both evening sessions are still bookable.
+ * The 12:00–12:30 physical/online cutoff gap now falls inside the no-number
+ * break and is covered by BreakBookingIntegrationTests.
  */
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:postgresql://127.0.0.1:55432/medichannel_test",
@@ -70,7 +72,7 @@ class BookingCutoffIntegrationTests {
         @Primary
         Clock fixedTestClock() {
             return Clock.fixed(
-                    Instant.parse("2026-11-25T05:45:00Z"),
+                    Instant.parse("2026-11-25T04:30:00Z"),
                     ZoneId.of("Asia/Colombo")
             );
         }
@@ -137,15 +139,15 @@ class BookingCutoffIntegrationTests {
         DoctorSession afternoonPhysical = openSession(
                 afternoonPhysicalDoctor,
                 today,
-                ClinicSchedule.AFTERNOON_START,
-                ClinicSchedule.AFTERNOON_END,
+                ClinicSchedule.EVENING_START,
+                ClinicSchedule.EVENING_END,
                 ConsultationType.PHYSICAL
         );
         DoctorSession afternoonOnline = openSession(
                 afternoonOnlineDoctor,
                 today,
-                ClinicSchedule.AFTERNOON_START,
-                ClinicSchedule.AFTERNOON_END,
+                ClinicSchedule.EVENING_START,
+                ClinicSchedule.EVENING_END,
                 ConsultationType.ONLINE
         );
 
@@ -167,14 +169,20 @@ class BookingCutoffIntegrationTests {
         ));
 
         AppointmentBookingRequest morningRequest =
-                new AppointmentBookingRequest(morning.getId(), "Morning review");
+                new AppointmentBookingRequest(
+                        morning.getId(),
+                        "Morning review",
+                        ConsultationPeriod.MORNING
+                );
         AppointmentBookingRequest physicalRequest = new AppointmentBookingRequest(
                 afternoonPhysical.getId(),
-                "Afternoon physical review"
+                "Evening physical review",
+                ConsultationPeriod.EVENING
         );
         AppointmentBookingRequest onlineRequest = new AppointmentBookingRequest(
                 afternoonOnline.getId(),
-                "Afternoon online review"
+                "Evening online review",
+                ConsultationPeriod.EVENING
         );
 
         assertThatThrownBy(() ->
@@ -182,16 +190,16 @@ class BookingCutoffIntegrationTests {
         ).isInstanceOf(ConflictException.class)
                 .hasMessageContaining("booking deadline");
 
-        assertThatThrownBy(() ->
-                appointmentService.book(patientUser.getId(), physicalRequest)
-        ).isInstanceOf(ConflictException.class)
-                .hasMessageContaining("booking deadline");
-
-        var booked = appointmentService.book(
+        var bookedPhysical = appointmentService.book(
+                patientUser.getId(),
+                physicalRequest
+        );
+        var bookedOnline = appointmentService.book(
                 patientUser.getId(),
                 onlineRequest
         );
-        assertThat(booked.sessionId()).isEqualTo(afternoonOnline.getId());
+        assertThat(bookedPhysical.sessionId()).isEqualTo(afternoonPhysical.getId());
+        assertThat(bookedOnline.sessionId()).isEqualTo(afternoonOnline.getId());
     }
 
     private Doctor createDoctor(

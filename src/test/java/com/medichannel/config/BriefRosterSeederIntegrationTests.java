@@ -119,8 +119,8 @@ class BriefRosterSeederIntegrationTests {
                     id
             );
             assertThat(shape).isIn(
-                    "07:00:00|09:30:00|30|5",
-                    "12:00:00|14:30:00|30|5"
+                    "07:00:00|11:00:00|30|5",
+                    "13:00:00|15:00:00|30|5"
             );
         }
 
