@@ -23,7 +23,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import org.springframework.context.annotation.Import;
+
 import com.medichannel.config.ClinicSchedule;
+import com.medichannel.config.WorkHoursClockTestConfiguration;
 import com.medichannel.entity.Doctor;
 import com.medichannel.entity.DoctorSession;
 import com.medichannel.entity.Patient;
@@ -62,6 +65,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "spring.jpa.open-in-view=false",
     "spring.jpa.properties.hibernate.jdbc.time_zone=UTC"
 })
+@Import(WorkHoursClockTestConfiguration.class)
 @AutoConfigureMockMvc
 @Transactional
 class AppointmentApiPostgresIntegrationTests {
