@@ -198,16 +198,18 @@ public class DemoDataSeeder implements ApplicationRunner {
     };
 
     private static final int TARGET_AVAILABLE_DOCTORS = 40;
-    private static final int SESSIONS_PER_DOCTOR_PER_WEEK = 6;
-    private static final int DOCTORS_PER_DAY = 20;
+    // 40 doctors x 3 sessions = 120, plus one extra opposite-window session
+    // for the first 12 doctors = 132 sessions in a full published week. This
+    // keeps the roster inside the brief's 120-140 range without overloading
+    // the 40-doctor hospital.
+    private static final int BASE_SESSIONS_PER_DOCTOR_PER_WEEK = 3;
+    private static final int DOCTORS_WITH_FOUR_SESSIONS = 12;
+    private static final int TARGET_SESSIONS_PER_WEEK =
+            TARGET_AVAILABLE_DOCTORS * BASE_SESSIONS_PER_DOCTOR_PER_WEEK
+                    + DOCTORS_WITH_FOUR_SESSIONS;
     // The public dashboard offers sessions up to six months ahead, week by
     // week, so the demo roster is published for the same horizon.
     private static final int PUBLISHED_WEEKS = 26;
-
-    // 20 doctors x 3 days x 2 windows = 120 sessions per cohort, so the two
-    // cohorts publish 240 sessions each week with 20 doctors on every day.
-    private static final int[] MON_WED_FRI = {0, 2, 4};
-    private static final int[] TUE_THU_SAT = {1, 3, 5};
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -809,9 +811,11 @@ public class DemoDataSeeder implements ApplicationRunner {
     }
 
     /**
-     * Forty available doctors each receive two published sessions on each of
-     * three days per week for 26 weeks: 07:00–11:00 and 13:00–15:00, with 30
-     * places and five-minute slots each, giving 60 places per doctor/day.
+     * Forty available doctors receive 132 published sessions in a full week:
+     * every doctor has three sessions spread across different days, and the
+     * first twelve also receive the opposite window on their first day.
+     * Every session remains inside 07:00–11:00 or 13:00–15:00, with 30 places
+     * and five-minute slots, so a doctor never exceeds 60 places in one day.
      */
     private void seedSessions(List<Doctor> doctors, List<Room> rooms) {
         LocalDate firstDate = LocalDate.now(clock);
@@ -832,74 +836,57 @@ public class DemoDataSeeder implements ApplicationRunner {
                     continue;
                 }
 
-                int[] dayOffsets = doctorIndex < DOCTORS_PER_DAY
-                        ? MON_WED_FRI
-                        : TUE_THU_SAT;
-                List<LocalTime[]> windows = List.of(
-                        new LocalTime[] {
-                                ClinicSchedule.MORNING_START,
-                                ClinicSchedule.MORNING_END
-                        },
-                        new LocalTime[] {
-                                ClinicSchedule.EVENING_START,
-                                ClinicSchedule.EVENING_END
-                        }
-                );
-
-                for (int dayOffset : dayOffsets) {
+                for (PlannedSession planned : weeklyPlan(doctorIndex)) {
                     LocalDate date = firstDate.plusDays(
-                            week * 7L + dayOffset
+                            week * 7L + planned.dayOffset()
                     );
+                    LocalTime startTime = planned.startTime();
+                    LocalTime endTime = planned.endTime();
 
-                    for (LocalTime[] window : windows) {
-                        LocalTime startTime = window[0];
-                        LocalTime endTime = window[1];
-
-                        boolean alreadyPublished = doctorSessionRepository
-                                .findByDoctorIdAndSessionDateAndStatus(
-                                        doctor.getId(),
-                                        date,
-                                        SessionStatus.OPEN
-                                )
-                                .stream()
-                                .anyMatch(session ->
-                                        startTime.equals(session.getStartTime())
-                                                && endTime.equals(
-                                                        session.getEndTime()
-                                                )
-                                );
-                        if (alreadyPublished) {
-                            continue;
-                        }
-
-                        Room room = consultationRooms.stream()
-                                .filter(candidate -> isRoomAvailable(
-                                        candidate,
-                                        date,
-                                        startTime,
-                                        endTime
-                                ))
-                                .findFirst()
-                                .orElse(null);
-                        boolean online = room == null;
-
-                        doctorSessionService.createSession(
-                                new DoctorSessionRequest(
-                                        doctor.getId(),
-                                        online ? null : room.getId(),
-                                        date,
-                                        startTime,
-                                        endTime,
-                                        online
-                                                ? ConsultationType.ONLINE
-                                                : ConsultationType.PHYSICAL,
-                                        ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
-                                        ClinicSchedule.MINUTES_PER_PATIENT,
-                                        FEES[doctorIndex % FEES.length]
-                                )
-                        );
-                        sessionsCreated += 1;
+                    boolean alreadyPublished = doctorSessionRepository
+                            .findByDoctorIdAndSessionDateAndStatus(
+                                    doctor.getId(),
+                                    date,
+                                    SessionStatus.OPEN
+                            )
+                            .stream()
+                            .anyMatch(session ->
+                                    startTime.equals(session.getStartTime())
+                                            && endTime.equals(
+                                                    session.getEndTime()
+                                            )
+                            );
+                    if (alreadyPublished) {
+                        continue;
                     }
+
+                    Room room = consultationRooms.stream()
+                            .filter(candidate -> isRoomAvailable(
+                                    candidate,
+                                    date,
+                                    startTime,
+                                    endTime
+                            ))
+                            .findFirst()
+                            .orElse(null);
+                    boolean online = room == null;
+
+                    doctorSessionService.createSession(
+                            new DoctorSessionRequest(
+                                    doctor.getId(),
+                                    online ? null : room.getId(),
+                                    date,
+                                    startTime,
+                                    endTime,
+                                    online
+                                            ? ConsultationType.ONLINE
+                                            : ConsultationType.PHYSICAL,
+                                    ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
+                                    ClinicSchedule.MINUTES_PER_PATIENT,
+                                    FEES[doctorIndex % FEES.length]
+                            )
+                    );
+                    sessionsCreated += 1;
                 }
 
                 doctorIndex += 1;
@@ -907,11 +894,62 @@ public class DemoDataSeeder implements ApplicationRunner {
         }
 
         logger.info(
-                "Doctor sessions created across {} weeks: {} ({} per doctor per week).",
+                "Doctor sessions created across {} weeks: {} (target {} per week).",
                 PUBLISHED_WEEKS,
                 sessionsCreated,
-                SESSIONS_PER_DOCTOR_PER_WEEK
+                TARGET_SESSIONS_PER_WEEK
         );
+    }
+
+    /**
+     * A deterministic three-day rotation keeps doctors spread across the week.
+     * Alternating the first window balances morning and evening availability.
+     * The extra fourth session is only for the first twelve doctors and uses
+     * the opposite window on their first day, keeping that day at 60 places.
+     */
+    private List<PlannedSession> weeklyPlan(int doctorIndex) {
+        List<PlannedSession> plan = new ArrayList<>(4);
+        int firstDay = doctorIndex % 7;
+        int[] days = {
+                firstDay,
+                (firstDay + 2) % 7,
+                (firstDay + 4) % 7
+        };
+        boolean firstWindowIsMorning = doctorIndex % 2 == 0;
+
+        for (int index = 0; index < days.length; index += 1) {
+            boolean morning = index % 2 == 0
+                    ? firstWindowIsMorning
+                    : !firstWindowIsMorning;
+            plan.add(plannedSession(days[index], morning));
+        }
+
+        if (doctorIndex < DOCTORS_WITH_FOUR_SESSIONS) {
+            plan.add(plannedSession(firstDay, !firstWindowIsMorning));
+        }
+
+        return plan;
+    }
+
+    private PlannedSession plannedSession(int dayOffset, boolean morning) {
+        return morning
+                ? new PlannedSession(
+                        dayOffset,
+                        ClinicSchedule.MORNING_START,
+                        ClinicSchedule.MORNING_END
+                )
+                : new PlannedSession(
+                        dayOffset,
+                        ClinicSchedule.EVENING_START,
+                        ClinicSchedule.EVENING_END
+                );
+    }
+
+    private record PlannedSession(
+            int dayOffset,
+            LocalTime startTime,
+            LocalTime endTime
+    ) {
     }
 
     private boolean isRoomAvailable(

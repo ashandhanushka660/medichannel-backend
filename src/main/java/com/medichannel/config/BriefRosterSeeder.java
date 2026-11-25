@@ -62,13 +62,11 @@ public class BriefRosterSeeder implements ApplicationRunner {
     private static final String EMAIL_DOMAIN = "medichannel.demo";
     private static final int TARGET_DOCTORS = 40;
     private static final int FIRST_NEW_DOCTOR_INDEX = 17;
-    private static final int COHORT_SIZE = 20;
-
-    // Monday, Wednesday, Friday and Sunday for one cohort; Tuesday, Thursday
-    // and Saturday for the other. Two windows on each day give 280 sessions
-    // in a full week, comfortably above the brief's "more than 120".
-    private static final int[] COHORT_A_DAYS = {0, 2, 4, 6};
-    private static final int[] COHORT_B_DAYS = {1, 3, 5};
+    private static final int BASE_SESSIONS_PER_DOCTOR_PER_WEEK = 3;
+    private static final int DOCTORS_WITH_FOUR_SESSIONS = 12;
+    private static final int TARGET_SESSIONS_PER_WEEK =
+            TARGET_DOCTORS * BASE_SESSIONS_PER_DOCTOR_PER_WEEK
+                    + DOCTORS_WITH_FOUR_SESSIONS;
 
     private static final String[] SPECIALISATIONS = {
             "Cardiology",
@@ -446,65 +444,58 @@ public class BriefRosterSeeder implements ApplicationRunner {
         int created = 0;
         int duplicates = 0;
         int pastSlots = 0;
-        int doctorIndex = 0;
 
         for (int week = 0; week < publishedWeeks; week += 1) {
+            int doctorIndex = 0;
             for (Doctor doctor : doctors) {
-                int[] dayOffsets = doctorIndex < COHORT_SIZE
-                        ? COHORT_A_DAYS
-                        : COHORT_B_DAYS;
-
-                for (int dayOffset : dayOffsets) {
+                for (PlannedSession planned : weeklyPlan(doctorIndex)) {
                     LocalDate date = weekStart.plusDays(
-                            week * 7L + dayOffset
+                            week * 7L + planned.dayOffset()
                     );
+                    LocalTime startTime = planned.startTime();
+                    LocalTime endTime = planned.endTime();
 
-                    for (LocalTime[] window : windows()) {
-                        LocalTime startTime = window[0];
-                        LocalTime endTime = window[1];
-
-                        if (!date.atTime(endTime).isAfter(now)) {
-                            pastSlots += 1;
-                            continue;
-                        }
-
-                        if (alreadyPublished(
-                                doctor.getId(),
-                                date,
-                                startTime,
-                                endTime
-                        )) {
-                            duplicates += 1;
-                            continue;
-                        }
-
-                        Room room = consultationRooms.stream()
-                                .filter(candidate -> isRoomAvailable(
-                                        candidate, date, startTime, endTime
-                                ))
-                                .findFirst()
-                                .orElse(null);
-                        boolean online = room == null;
-
-                        doctorSessionService.createSession(
-                                new DoctorSessionRequest(
-                                        doctor.getId(),
-                                        online ? null : room.getId(),
-                                        date,
-                                        startTime,
-                                        endTime,
-                                        online
-                                                ? ConsultationType.ONLINE
-                                                : ConsultationType.PHYSICAL,
-                                        ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
-                                        ClinicSchedule.MINUTES_PER_PATIENT,
-                                        consultationFee(
-                                                doctor.getRegistrationNumber()
-                                        )
-                                )
-                        );
-                        created += 1;
+                    if (!date.atTime(endTime).isAfter(now)) {
+                        pastSlots += 1;
+                        continue;
                     }
+
+                    if (alreadyPublished(
+                            doctor.getId(),
+                            date,
+                            startTime,
+                            endTime
+                    )) {
+                        duplicates += 1;
+                        continue;
+                    }
+
+                    Room room = consultationRooms.stream()
+                            .filter(candidate -> isRoomAvailable(
+                                    candidate, date, startTime, endTime
+                            ))
+                            .findFirst()
+                            .orElse(null);
+                    boolean online = room == null;
+
+                    doctorSessionService.createSession(
+                            new DoctorSessionRequest(
+                                    doctor.getId(),
+                                    online ? null : room.getId(),
+                                    date,
+                                    startTime,
+                                    endTime,
+                                    online
+                                            ? ConsultationType.ONLINE
+                                            : ConsultationType.PHYSICAL,
+                                    ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
+                                    ClinicSchedule.MINUTES_PER_PATIENT,
+                                    consultationFee(
+                                            doctor.getRegistrationNumber()
+                                    )
+                            )
+                    );
+                    created += 1;
                 }
                 doctorIndex += 1;
             }
@@ -513,17 +504,54 @@ public class BriefRosterSeeder implements ApplicationRunner {
         return new SeedingResult(created, duplicates, pastSlots);
     }
 
-    private List<LocalTime[]> windows() {
-        return List.of(
-                new LocalTime[] {
+    /**
+     * The same 132-session weekly pattern used by the production roster
+     * migration: three spread-out days per doctor, an alternating first
+     * window, and one opposite-window session for the first twelve doctors.
+     */
+    private List<PlannedSession> weeklyPlan(int doctorIndex) {
+        List<PlannedSession> plan = new ArrayList<>(4);
+        int firstDay = doctorIndex % 7;
+        int[] days = {
+                firstDay,
+                (firstDay + 2) % 7,
+                (firstDay + 4) % 7
+        };
+        boolean firstWindowIsMorning = doctorIndex % 2 == 0;
+
+        for (int index = 0; index < days.length; index += 1) {
+            boolean morning = index % 2 == 0
+                    ? firstWindowIsMorning
+                    : !firstWindowIsMorning;
+            plan.add(plannedSession(days[index], morning));
+        }
+
+        if (doctorIndex < DOCTORS_WITH_FOUR_SESSIONS) {
+            plan.add(plannedSession(firstDay, !firstWindowIsMorning));
+        }
+
+        return plan;
+    }
+
+    private PlannedSession plannedSession(int dayOffset, boolean morning) {
+        return morning
+                ? new PlannedSession(
+                        dayOffset,
                         ClinicSchedule.MORNING_START,
                         ClinicSchedule.MORNING_END
-                },
-                new LocalTime[] {
+                )
+                : new PlannedSession(
+                        dayOffset,
                         ClinicSchedule.EVENING_START,
                         ClinicSchedule.EVENING_END
-                }
-        );
+                );
+    }
+
+    private record PlannedSession(
+            int dayOffset,
+            LocalTime startTime,
+            LocalTime endTime
+    ) {
     }
 
     private boolean alreadyPublished(

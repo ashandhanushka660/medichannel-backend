@@ -92,17 +92,17 @@ class BriefRosterSeederIntegrationTests {
         assertThat(doctorRepository.findPublicDirectory())
                 .hasSizeGreaterThanOrEqualTo(40);
 
-        long currentWeek = count(
+        long nextWeek = count(
                 """
                 SELECT COUNT(*)
                 FROM doctor_sessions
                 WHERE session_date BETWEEN ? AND ?
                   AND status <> 'CANCELLED'
                 """,
-                Date.valueOf(LocalDate.of(2026, 11, 23)),
-                Date.valueOf(LocalDate.of(2026, 11, 29))
+                Date.valueOf(LocalDate.of(2026, 11, 30)),
+                Date.valueOf(LocalDate.of(2026, 12, 6))
         );
-        assertThat(currentWeek).isGreaterThan(120L);
+        assertThat(nextWeek).isEqualTo(132L);
 
         // Only the sessions this runner created are asserted here. Legacy
         // test sessions may use older windows and are deliberately untouched.
