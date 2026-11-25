@@ -344,11 +344,13 @@ public class SecurityConfig {
                                 "/api/v1/specialisations/**"
                         ).hasAnyRole("ADMIN", "MANAGER")
 
-                        // Public session discovery.
+                        // Public session discovery. The per-session queue is
+                        // deliberately not public: the guest dashboard reads
+                        // live queue summaries from /public/doctors, while the
+                        // signed-in doctor view calls the queue with a token.
                         .requestMatchers(
                                 HttpMethod.GET,
-                                "/api/v1/sessions",
-                                "/api/v1/sessions/*/queue"
+                                "/api/v1/sessions"
                         ).permitAll()
 
                         // Doctor session creation: Admin or Manager only.

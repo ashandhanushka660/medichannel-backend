@@ -208,8 +208,12 @@ class PatientBookingCongruenceIntegrationTests {
                 unavailableDoctorSession.getId().toString()
         );
 
+        mockMvc.perform(get("/api/v1/sessions/" + eligible.getId() + "/queue"))
+                .andExpect(status().isUnauthorized());
+
         JsonNode before = objectMapper.readTree(
-                mockMvc.perform(get("/api/v1/sessions/" + eligible.getId() + "/queue"))
+                mockMvc.perform(get("/api/v1/sessions/" + eligible.getId() + "/queue")
+                                .with(customerJwt(patientUser.getId())))
                         .andExpect(status().isOk())
                         .andReturn()
                         .getResponse()
@@ -234,7 +238,8 @@ class PatientBookingCongruenceIntegrationTests {
         assertThat(booking.get("appointmentNumber").asInt()).isEqualTo(1);
 
         JsonNode after = objectMapper.readTree(
-                mockMvc.perform(get("/api/v1/sessions/" + eligible.getId() + "/queue"))
+                mockMvc.perform(get("/api/v1/sessions/" + eligible.getId() + "/queue")
+                                .with(customerJwt(patientUser.getId())))
                         .andExpect(status().isOk())
                         .andReturn()
                         .getResponse()

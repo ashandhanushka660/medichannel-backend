@@ -12,8 +12,9 @@ import com.medichannel.dto.queue.SessionQueueSummary;
 import com.medichannel.service.SessionQueueService;
 
 /**
- * Public, non-identifying queue state for a session. Patients use it
- * to show "now serving" and how many places are left.
+ * Non-identifying queue state for a session. Signed-in doctor views use it
+ * to show "now serving" and how many places are left; guests get the same
+ * live figures from the public doctor directory instead.
  */
 @RestController
 @RequestMapping("/api/v1/sessions")
