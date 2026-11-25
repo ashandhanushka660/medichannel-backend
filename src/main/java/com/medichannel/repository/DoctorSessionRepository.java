@@ -161,6 +161,25 @@ public interface DoctorSessionRepository
     );
 
     /**
+     * One batched read for the guest directory: every session for the
+     * supplied doctors from the requested date onwards. Loading the doctor
+     * and room in the same query avoids a per-doctor N+1.
+     */
+    @Query("""
+            SELECT s
+            FROM DoctorSession s
+            JOIN FETCH s.doctor d
+            LEFT JOIN FETCH s.room r
+            WHERE d.id IN :doctorIds
+              AND s.sessionDate >= :fromDate
+            ORDER BY s.sessionDate ASC, s.startTime ASC
+            """)
+    List<DoctorSession> findDirectorySessions(
+            @Param("doctorIds") Collection<UUID> doctorIds,
+            @Param("fromDate") LocalDate fromDate
+    );
+
+    /**
      * Daily 60-patient rule: count every non-cancelled place a doctor has
      * published on the requested date. The session being edited is excluded
      * by the caller so its old value is not counted twice.

@@ -2,8 +2,12 @@ package com.medichannel.service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -93,11 +97,6 @@ public class SessionQueueService {
                         sessionId
                 );
         int lastNumber = storedLastNumber == null ? 0 : storedLastNumber;
-        int availableSlots = Math.max(
-                0,
-                session.getMaxAppointments() - lastNumber
-        );
-        Integer nextNumber = availableSlots == 0 ? null : lastNumber + 1;
 
         /*
          * RT-02: the queue length counts only patients who still occupy
@@ -114,15 +113,111 @@ public class SessionQueueService {
                                 )
         );
 
+        return summary(
+                session,
+                nowServing,
+                lastNumber,
+                remaining,
+                clock.instant()
+        );
+    }
+
+    /**
+     * Batched queue summaries for read-only pages that render many live
+     * sessions at once (the public doctor directory). The query count is
+     * fixed, so adding doctors cannot multiply database round trips.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, SessionQueueSummary> buildSummaries(
+            Collection<DoctorSession> sessions
+    ) {
+        if (sessions == null || sessions.isEmpty()) {
+            return Map.of();
+        }
+
+        List<UUID> sessionIds = sessions.stream()
+                .map(DoctorSession::getId)
+                .distinct()
+                .toList();
+
+        Map<UUID, Integer> nowServing = appointmentRepository
+                .findFirstNumbersBySessionIds(
+                        sessionIds,
+                        AppointmentStatus.IN_CONSULTATION
+                )
+                .stream()
+                .collect(Collectors.toMap(
+                        AppointmentRepository.SessionFirstNumber::getSessionId,
+                        AppointmentRepository.SessionFirstNumber::getFirstNumber
+                ));
+
+        Map<UUID, Long> activeCounts = appointmentRepository
+                .countActiveBySessionIds(sessionIds, ACTIVE_STATUSES)
+                .stream()
+                .collect(Collectors.toMap(
+                        AppointmentRepository.SessionActiveCount::getSessionId,
+                        AppointmentRepository.SessionActiveCount::getActiveCount
+                ));
+
+        Map<UUID, Integer> lastNumbers = new HashMap<>();
+        for (Object[] row : appointmentRepository
+                .findLastAppointmentNumbersBySessionIds(sessionIds)) {
+            lastNumbers.put(
+                    (UUID) row[0],
+                    ((Number) row[1]).intValue()
+            );
+        }
+
+        Instant computedAt = clock.instant();
+        Map<UUID, SessionQueueSummary> summaries = new HashMap<>();
+
+        for (DoctorSession session : sessions) {
+            long activeCount = activeCounts.getOrDefault(
+                    session.getId(),
+                    0L
+            );
+
+            summaries.put(
+                    session.getId(),
+                    summary(
+                            session,
+                            nowServing.get(session.getId()),
+                            lastNumbers.getOrDefault(session.getId(), 0),
+                            Math.max(
+                                    0,
+                                    session.getMaxAppointments()
+                                            - (int) activeCount
+                            ),
+                            computedAt
+                    )
+            );
+        }
+
+        return summaries;
+    }
+
+    private SessionQueueSummary summary(
+            DoctorSession session,
+            Integer nowServing,
+            int lastNumber,
+            int remaining,
+            Instant computedAt
+    ) {
+        int availableSlots = Math.max(
+                0,
+                session.getMaxAppointments() - lastNumber
+        );
+        Integer nextNumber = availableSlots == 0 ? null : lastNumber + 1;
+
         return new SessionQueueSummary(
-                sessionId,
+                session.getId(),
                 nowServing,
                 nextNumber,
                 remaining,
                 availableSlots,
                 session.getMaxAppointments(),
                 session.getStatus(),
-                clock.instant()
+                computedAt
         );
     }
 

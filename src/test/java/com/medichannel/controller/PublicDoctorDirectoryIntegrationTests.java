@@ -13,6 +13,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
+
+import jakarta.persistence.EntityManagerFactory;
+
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -49,7 +54,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "spring.jpa.hibernate.ddl-auto=validate",
     "spring.jpa.show-sql=false",
     "spring.jpa.open-in-view=false",
-    "spring.jpa.properties.hibernate.jdbc.time_zone=UTC"
+    "spring.jpa.properties.hibernate.jdbc.time_zone=UTC",
+    "spring.jpa.properties.hibernate.generate_statistics=true"
 })
 @AutoConfigureMockMvc
 @Transactional
@@ -87,6 +93,9 @@ class PublicDoctorDirectoryIntegrationTests {
 
     @Autowired
     private PatientDataProtectionService dataProtectionService;
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     @Test
     void guestCanSeeDoctorsRoomsHoursFeesAndLiveQueue() throws Exception {
@@ -299,6 +308,114 @@ class PublicDoctorDirectoryIntegrationTests {
                 .isEqualTo(weekStart.plusDays(181).toString());
     }
 
+    @Test
+    void weekCatalogueUsesOneCountQueryForTheWholePage() throws Exception {
+        String unique = UUID.randomUUID().toString().replace("-", "");
+
+        Role doctorRole = roleRepository.findByName("DOCTOR").orElseThrow();
+        Specialisation specialisation = specialisationRepository.saveAndFlush(
+                new Specialisation(
+                        "Batched Range Test " + unique,
+                        "Temporary batched session range test"
+                )
+        );
+        Doctor doctor = createDoctor(
+                doctorRole,
+                specialisation,
+                "Batched",
+                "Range",
+                "BATCH-RANGE-" + unique,
+                new BigDecimal("2500.00"),
+                unique
+        );
+        Room room = roomRepository.saveAndFlush(
+                new Room(
+                        "BATCH-" + unique.substring(0, 10),
+                        "Batched Range Room",
+                        "Local Test Hospital",
+                        RoomType.CONSULTATION,
+                        4
+                )
+        );
+
+        LocalDate start = LocalDate
+                .now(ZoneId.of("Asia/Colombo"))
+                .plusDays(1);
+        for (int day = 0; day < 7; day++) {
+            saveOpenSession(doctor, room, start.plusDays(day));
+        }
+
+        Statistics statistics = statistics();
+
+        statistics.clear();
+        mockMvc.perform(get("/api/v1/sessions")
+                        .param("date", start.toString()))
+                .andExpect(status().isOk());
+        long singleDayStatements = statistics.getPrepareStatementCount();
+
+        statistics.clear();
+        mockMvc.perform(get("/api/v1/sessions")
+                        .param("from", start.toString())
+                        .param("to", start.plusDays(6).toString()))
+                .andExpect(status().isOk());
+        long weekStatements = statistics.getPrepareStatementCount();
+
+        // Before batching this grew by one count query per extra session.
+        assertThat(weekStatements - singleDayStatements)
+                .as("week view must not add a count query per session")
+                .isLessThanOrEqualTo(2);
+    }
+
+    @Test
+    void directoryUsesBoundedQueriesForTheWholeRoster() throws Exception {
+        String unique = UUID.randomUUID().toString().replace("-", "");
+
+        Role doctorRole = roleRepository.findByName("DOCTOR").orElseThrow();
+        Specialisation specialisation = specialisationRepository.saveAndFlush(
+                new Specialisation(
+                        "Batched Directory Test " + unique,
+                        "Temporary batched directory test"
+                )
+        );
+
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Colombo"));
+        for (int doctorIndex = 0; doctorIndex < 6; doctorIndex++) {
+            Doctor doctor = createDoctor(
+                    doctorRole,
+                    specialisation,
+                    "Batched" + doctorIndex,
+                    "Doctor",
+                    "BATCH-DIR-" + doctorIndex + "-" + unique,
+                    new BigDecimal("2000.00"),
+                    unique
+            );
+            saveOpenOnlineSession(doctor, today);
+        }
+
+        Statistics statistics = statistics();
+
+        statistics.clear();
+        String body = mockMvc.perform(get("/api/v1/public/doctors"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long statements = statistics.getPrepareStatementCount();
+
+        JsonNode doctors = objectMapper.readTree(body);
+        assertThat(doctors.size()).isGreaterThanOrEqualTo(6);
+        // One doctor query, one session query and two grouped queue queries.
+        assertThat(statements)
+                .as("directory query count must not scale with roster size")
+                .isLessThanOrEqualTo(12);
+    }
+
+    private Statistics statistics() {
+        return entityManagerFactory
+                .unwrap(SessionFactory.class)
+                .getStatistics();
+    }
+
     private void saveOpenSession(Doctor doctor, Room room, LocalDate date) {
         var session = new com.medichannel.entity.DoctorSession(
                 doctor,
@@ -307,6 +424,24 @@ class PublicDoctorDirectoryIntegrationTests {
                 ClinicSchedule.MORNING_START,
                 ClinicSchedule.MORNING_END,
                 ConsultationType.PHYSICAL,
+                4
+        );
+        session.updateSchedulingDetails(
+                ClinicSchedule.MINUTES_PER_PATIENT,
+                new BigDecimal("2500.00")
+        );
+        session.open();
+        doctorSessionRepository.saveAndFlush(session);
+    }
+
+    private void saveOpenOnlineSession(Doctor doctor, LocalDate date) {
+        var session = new com.medichannel.entity.DoctorSession(
+                doctor,
+                null,
+                date,
+                ClinicSchedule.MORNING_START,
+                ClinicSchedule.MORNING_END,
+                ConsultationType.ONLINE,
                 4
         );
         session.updateSchedulingDetails(

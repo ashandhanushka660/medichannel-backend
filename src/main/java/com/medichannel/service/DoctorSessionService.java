@@ -6,9 +6,12 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -37,6 +40,13 @@ import com.medichannel.security.PatientDataProtectionService;
 
 @Service
 public class DoctorSessionService {
+
+    private static final List<AppointmentStatus> ACTIVE_APPOINTMENT_STATUSES =
+            List.of(
+                    AppointmentStatus.BOOKED,
+                    AppointmentStatus.ARRIVED,
+                    AppointmentStatus.IN_CONSULTATION
+            );
 
     private final DoctorSessionRepository doctorSessionRepository;
     private final DoctorRepository doctorRepository;
@@ -441,7 +451,16 @@ public class DoctorSessionService {
                                 sessionDate
                         );
 
-        return sessions.stream().map(this::toResponse).toList();
+        Map<UUID, Long> activeCounts = activeCountsBySessionId(
+                sessions.stream().map(DoctorSession::getId).toList()
+        );
+
+        return sessions.stream()
+                .map(session -> toResponse(
+                        session,
+                        activeCounts.getOrDefault(session.getId(), 0L)
+                ))
+                .toList();
     }
 
     // Public discovery of future sessions that still have capacity.
@@ -474,7 +493,7 @@ public class DoctorSessionService {
                 : period;
         LocalTime periodEnd = ClinicSchedule.periodEnd(period);
 
-        return doctorSessionRepository.findPublicOpenSessions(
+        List<DoctorSession> sessions = doctorSessionRepository.findPublicOpenSessions(
                 SessionStatus.OPEN,
                 now.toLocalDate(),
                 ConsultationType.PHYSICAL,
@@ -499,15 +518,24 @@ public class DoctorSessionService {
                 ClinicSchedule.EVENING_END,
                 ClinicSchedule.MINUTES_PER_PATIENT,
                 ClinicSchedule.MAX_APPOINTMENTS_PER_SESSION,
-                List.of(
-                        AppointmentStatus.BOOKED,
-                        AppointmentStatus.ARRIVED,
-                        AppointmentStatus.IN_CONSULTATION
-                )
-        ).stream()
+                ACTIVE_APPOINTMENT_STATUSES
+        );
+
+        // One grouped count for the whole result page instead of one
+        // appointment query per session. A week view returns hundreds of
+        // sessions and the per-row count used to exceed Heroku's request
+        // timeout.
+        Map<UUID, Long> activeCounts = activeCountsBySessionId(
+                sessions.stream().map(DoctorSession::getId).toList()
+        );
+
+        return sessions.stream()
                 .filter(session -> session.getStartTime().isBefore(periodEnd)
                         && session.getEndTime().isAfter(periodStart))
-                .map(this::toResponse)
+                .map(session -> toResponse(
+                        session,
+                        activeCounts.getOrDefault(session.getId(), 0L)
+                ))
                 .toList();
     }
 
@@ -722,7 +750,38 @@ public class DoctorSessionService {
         return room;
     }
 
+    private Map<UUID, Long> activeCountsBySessionId(
+            Collection<UUID> sessionIds
+    ) {
+        if (sessionIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return appointmentRepository
+                .countActiveBySessionIds(
+                        sessionIds,
+                        ACTIVE_APPOINTMENT_STATUSES
+                )
+                .stream()
+                .collect(Collectors.toMap(
+                        AppointmentRepository.SessionActiveCount::getSessionId,
+                        AppointmentRepository.SessionActiveCount::getActiveCount
+                ));
+    }
+
     private DoctorSessionResponse toResponse(DoctorSession session) {
+        long activeCount = appointmentRepository.countBySession_IdAndStatusIn(
+                session.getId(),
+                ACTIVE_APPOINTMENT_STATUSES
+        );
+
+        return toResponse(session, activeCount);
+    }
+
+    private DoctorSessionResponse toResponse(
+            DoctorSession session,
+            long activeAppointments
+    ) {
 
         Doctor doctor = session.getDoctor();
         Room room = session.getRoom();
@@ -742,16 +801,7 @@ public class DoctorSessionService {
                 session.getMaxAppointments(),
                 Math.max(
                         0,
-                        session.getMaxAppointments()
-                                - (int) appointmentRepository
-                                        .countBySession_IdAndStatusIn(
-                                                session.getId(),
-                                                java.util.List.of(
-                                                        AppointmentStatus.BOOKED,
-                                                        AppointmentStatus.ARRIVED,
-                                                        AppointmentStatus.IN_CONSULTATION
-                                                )
-                                        )
+                        session.getMaxAppointments() - (int) activeAppointments
                 ),
                 session.getMinutesPerPatient(),
                 session.getFeeLkr(),

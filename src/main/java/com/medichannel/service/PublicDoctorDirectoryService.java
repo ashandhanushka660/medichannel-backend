@@ -2,10 +2,12 @@ package com.medichannel.service;
 
 import java.time.Clock;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,49 +75,102 @@ public class PublicDoctorDirectoryService {
     public List<DoctorDirectoryEntry> getDirectory() {
         LocalDate today = LocalDate.now(clock);
 
-        return doctorRepository
-                .findPublicDirectoryIncludingUnavailable()
-                .stream()
-                .map((doctor) -> toEntry(doctor, today))
-                .toList();
-    }
+        List<Doctor> doctors =
+                doctorRepository.findPublicDirectoryIncludingUnavailable();
 
-    private DoctorDirectoryEntry toEntry(Doctor doctor, LocalDate today) {
-        List<DoctorSession> todaySessions = doctorSessionRepository
-                .findByDoctor_IdAndSessionDate(doctor.getId(), today);
+        if (doctors.isEmpty()) {
+            return List.of();
+        }
 
-        DoctorSession activeSession = todaySessions.stream()
-                .filter((session) ->
-                        ACTIVE_PRIORITY.containsKey(session.getStatus())
-                                && ClinicSchedule.isBookableSession(session)
-                )
-                .min(ACTIVE_SESSION_ORDER)
-                .orElse(null);
+        /*
+         * One query loads every session for the whole roster instead of
+         * one (or two) per doctor. The directory is rendered for every
+         * guest visit, so a per-doctor query pattern would multiply by
+         * the size of the roster.
+         */
+        Map<UUID, List<DoctorSession>> sessionsByDoctor =
+                doctorSessionRepository
+                        .findDirectorySessions(
+                                doctors.stream()
+                                        .map(Doctor::getId)
+                                        .toList(),
+                                today
+                        )
+                        .stream()
+                        .collect(Collectors.groupingBy(
+                                session -> session.getDoctor().getId()
+                        ));
 
-        DoctorSession sessionForDetails = activeSession;
-        if (sessionForDetails == null) {
-            List<DoctorSession> candidates = new ArrayList<>(todaySessions);
-            candidates.addAll(
-                    doctorSessionRepository
-                            .findByDoctor_IdAndSessionDateGreaterThanEqualOrderBySessionDateAscStartTimeAsc(
-                                    doctor.getId(),
-                                    today.plusDays(1)
-                            )
-            );
+        Map<UUID, DoctorSession> activeByDoctor = new HashMap<>();
+        Map<UUID, DoctorSession> detailsByDoctor = new HashMap<>();
 
-            sessionForDetails = candidates.stream()
+        for (Doctor doctor : doctors) {
+            List<DoctorSession> doctorSessions =
+                    sessionsByDoctor.getOrDefault(
+                            doctor.getId(),
+                            List.of()
+                    );
+
+            DoctorSession activeSession = doctorSessions.stream()
+                    .filter(session -> session.getSessionDate().equals(today))
                     .filter((session) ->
                             ACTIVE_PRIORITY.containsKey(session.getStatus())
                                     && ClinicSchedule.isBookableSession(session)
                     )
-                    .min(UPCOMING_SESSION_ORDER)
+                    .min(ACTIVE_SESSION_ORDER)
                     .orElse(null);
+
+            DoctorSession sessionForDetails = activeSession != null
+                    ? activeSession
+                    : doctorSessions.stream()
+                            .filter((session) ->
+                                    ACTIVE_PRIORITY.containsKey(
+                                            session.getStatus()
+                                    )
+                                            && ClinicSchedule
+                                                    .isBookableSession(session)
+                            )
+                            .min(UPCOMING_SESSION_ORDER)
+                            .orElse(null);
+
+            if (activeSession != null) {
+                activeByDoctor.put(doctor.getId(), activeSession);
+            }
+
+            if (sessionForDetails != null) {
+                detailsByDoctor.put(doctor.getId(), sessionForDetails);
+            }
         }
 
-        SessionQueueSummary queue = activeSession == null
-                ? null
-                : sessionQueueService.buildSummary(activeSession);
+        // Fixed number of queue queries for the whole page.
+        Map<UUID, SessionQueueSummary> queues =
+                sessionQueueService.buildSummaries(
+                        activeByDoctor.values()
+                );
 
+        return doctors.stream()
+                .map((doctor) -> {
+                    DoctorSession activeSession =
+                            activeByDoctor.get(doctor.getId());
+
+                    return toEntry(
+                            doctor,
+                            detailsByDoctor.get(doctor.getId()),
+                            activeSession,
+                            activeSession == null
+                                    ? null
+                                    : queues.get(activeSession.getId())
+                    );
+                })
+                .toList();
+    }
+
+    private DoctorDirectoryEntry toEntry(
+            Doctor doctor,
+            DoctorSession sessionForDetails,
+            DoctorSession activeSession,
+            SessionQueueSummary queue
+    ) {
         String name = ("Dr. " + doctor.getFirstName() + " "
                 + doctor.getLastName()).replaceAll("\\s+", " ").trim();
         Room room = sessionForDetails == null

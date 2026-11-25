@@ -52,6 +52,67 @@ public interface AppointmentRepository
             Collection<AppointmentStatus> statuses
     );
 
+    /**
+     * Reads the allocation counters for many sessions at once. Native on
+     * purpose: the booking trigger updates the column after the entity may
+     * already be in the persistence context.
+     */
+    @Query(value = """
+            SELECT id, last_appointment_number
+            FROM doctor_sessions
+            WHERE id IN (:sessionIds)
+            """, nativeQuery = true)
+    List<Object[]> findLastAppointmentNumbersBySessionIds(
+            @Param("sessionIds") Collection<UUID> sessionIds
+    );
+
+    /**
+     * Batched active counts for a whole page of sessions. A public
+     * catalogue request must never issue one count query per session.
+     */
+    @Query("""
+            SELECT a.session.id AS sessionId, COUNT(a) AS activeCount
+            FROM Appointment a
+            WHERE a.session.id IN :sessionIds
+              AND a.status IN :statuses
+            GROUP BY a.session.id
+            """)
+    List<SessionActiveCount> countActiveBySessionIds(
+            @Param("sessionIds") Collection<UUID> sessionIds,
+            @Param("statuses") Collection<AppointmentStatus> statuses
+    );
+
+    /**
+     * First appointment number in consultation for each session, batched
+     * for the public directory queue summary.
+     */
+    @Query("""
+            SELECT a.session.id AS sessionId,
+                   MIN(a.appointmentNumber) AS firstNumber
+            FROM Appointment a
+            WHERE a.session.id IN :sessionIds
+              AND a.status = :status
+            GROUP BY a.session.id
+            """)
+    List<SessionFirstNumber> findFirstNumbersBySessionIds(
+            @Param("sessionIds") Collection<UUID> sessionIds,
+            @Param("status") AppointmentStatus status
+    );
+
+    interface SessionActiveCount {
+
+        UUID getSessionId();
+
+        long getActiveCount();
+    }
+
+    interface SessionFirstNumber {
+
+        UUID getSessionId();
+
+        Integer getFirstNumber();
+    }
+
     List<Appointment>
             findBySession_IdAndAppointmentNumberGreaterThanEqualAndStatusInOrderByAppointmentNumberAsc(
                     UUID sessionId,
