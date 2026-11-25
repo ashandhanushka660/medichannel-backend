@@ -83,6 +83,19 @@ class CorsAndWebSocketHandshakeTests {
     }
 
     @Test
+    void preflightFromProductionAppOriginIsAccepted() throws Exception {
+        String appOrigin = "https://app.medichannel.dpdns.org";
+        mockMvc.perform(
+            options("/api/v1/doctors")
+                .header("Origin", appOrigin)
+                .header("Access-Control-Request-Method", "GET")
+        )
+            .andExpect(status().isOk())
+            .andExpect(header().string(
+                "Access-Control-Allow-Origin", appOrigin));
+    }
+
+    @Test
     void preflightFromUnlistedVercelPreviewOriginIsRejected() throws Exception {
         String vercelOrigin = "https://ashandhanushka660-medichannel-f.vercel.app";
         mockMvc.perform(
@@ -102,6 +115,19 @@ class CorsAndWebSocketHandshakeTests {
         // header while opening a WebSocket. The JWT is checked later, on
         // the STOMP CONNECT frame.
         int httpStatus = mockMvc.perform(get("/ws"))
+                .andReturn()
+                .getResponse()
+                .getStatus();
+
+        assertThat(httpStatus).isNotIn(401, 403);
+    }
+
+    @Test
+    void webSocketHandshakeAcceptsProductionAppOrigin() throws Exception {
+        int httpStatus = mockMvc.perform(
+                get("/ws")
+                        .header("Origin", "https://app.medichannel.dpdns.org")
+        )
                 .andReturn()
                 .getResponse()
                 .getStatus();

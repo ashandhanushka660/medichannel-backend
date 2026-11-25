@@ -2,7 +2,6 @@ package com.medichannel.security;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
@@ -10,6 +9,7 @@ import java.util.UUID;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
+import com.medichannel.config.FrontendOrigins;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -443,16 +443,7 @@ public class SecurityConfig {
             @Value("${APP_FRONTEND_ORIGIN:http://localhost:3000}")
             String allowedOrigins
     ) {
-        List<String> origins = Arrays.stream(allowedOrigins.split(","))
-                .map(String::trim)
-                .filter(origin -> !origin.isEmpty())
-                .toList();
-
-        if (origins.isEmpty() || origins.contains("*")) {
-            throw new IllegalStateException(
-                    "APP_FRONTEND_ORIGIN must list explicit origins, not '*'."
-            );
-        }
+        List<String> origins = FrontendOrigins.resolve(allowedOrigins);
 
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOriginPatterns(origins);

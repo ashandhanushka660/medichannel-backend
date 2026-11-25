@@ -78,17 +78,18 @@ Create a **Web Service** from the repository.
 | `JWT_SECRET` | ✅ | Base64, ≥ 32 decoded bytes |
 | `ENCRYPTION_KEY` | ✅ | Base64, exactly 32 decoded bytes |
 | `HMAC_SECRET` | ✅ | Base64, exactly 32 decoded bytes |
-| `APP_FRONTEND_ORIGIN` | ✅ | Comma-separated explicit origins, e.g. `https://medichannel.netlify.app` |
+| `APP_FRONTEND_ORIGIN` | ✅ | Comma-separated explicit origins, e.g. `https://medichannel.netlify.app`; production frontend origins are always included |
 | `APP_ADMIN_EMAIL` | optional | First admin email; only used when the account does not exist |
 | `APP_ADMIN_PASSWORD` | optional | ≥ 12 characters, ≤ 72 UTF-8 bytes; only used for first creation |
 | `APP_REGISTRATION_AUTO_ACTIVATE` | optional | Default `true` until email verification exists |
 | `DB_POOL_SIZE` | optional | Default `5` |
 | `DB_MIN_IDLE` | optional | Default `1` |
 
-`APP_FRONTEND_ORIGIN` must not be `*`. Empty or wildcard values fail startup by
-design. In addition to these explicit origins, `https://*.vercel.app` is allowed
-for HTTP CORS and the WebSocket handshake so Vercel preview and alias hostnames
-can use live chat without a backend redeploy. Non-Vercel origins must still be
+`APP_FRONTEND_ORIGIN` must not be `*`. Wildcard values fail startup by design.
+An empty value still allows the production origins. The production origins
+`http://34.80.137.3:3000`, `https://medichannel-f.vercel.app`, and
+`https://app.medichannel.dpdns.org` are
+always allowed for HTTP CORS and the WebSocket handshake. Other origins must be
 listed explicitly.
 
 ### Isolated development staging service

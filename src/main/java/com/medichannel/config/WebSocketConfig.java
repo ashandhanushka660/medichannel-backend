@@ -1,6 +1,5 @@
 package com.medichannel.config;
 
-import java.util.Arrays;
 import java.util.List;
 
 import com.medichannel.security.WebSocketAuthorizationInterceptor;
@@ -42,19 +41,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        List<String> allowedOrigins = Arrays.stream(frontendOrigin.split(","))
-                .map(String::trim)
-                .filter(origin -> !origin.isEmpty())
-                .toList();
+        List<String> allowedOrigins = FrontendOrigins.resolve(frontendOrigin);
 
-        if (allowedOrigins.isEmpty() || allowedOrigins.contains("*")) {
-            throw new IllegalStateException(
-                    "APP_FRONTEND_ORIGIN must list explicit origins, not '*'."
-            );
-        }
-
-        // Exact origins only. Vercel preview aliases are intentionally not
-        // allowed through a wildcard.
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns(allowedOrigins.toArray(String[]::new));
     }
