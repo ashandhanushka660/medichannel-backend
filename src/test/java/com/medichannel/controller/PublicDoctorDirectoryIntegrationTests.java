@@ -30,6 +30,7 @@ import com.medichannel.entity.Room;
 import com.medichannel.entity.Specialisation;
 import com.medichannel.entity.User;
 import com.medichannel.enums.ConsultationType;
+import com.medichannel.enums.PaymentMethod;
 import com.medichannel.enums.RoomType;
 import com.medichannel.repository.AppointmentRepository;
 import com.medichannel.repository.DoctorRepository;
@@ -185,6 +186,9 @@ class PublicDoctorDirectoryIntegrationTests {
                 patient,
                 dataProtectionService.encrypt("Follow-up")
         );
+        appointment.acceptByDoctor(Instant.now());
+        appointment.markPaid(PaymentMethod.CARD);
+        appointment.markCheckedIn(Instant.now());
         appointment.markArrived(Instant.now());
         appointment.startConsultation(Instant.now());
         appointmentRepository.saveAndFlush(appointment);

@@ -137,7 +137,7 @@ class AdminPortalPostgresIntegrationTests {
         TestFixture fixture = createFixture();
 
         String appointmentId = bookAppointment(fixture);
-        payForAppointment(appointmentId, fixture.patientUserId());
+        payForAppointment(appointmentId, fixture);
 
         // User directory.
         String usersBody = mockMvc.perform(
@@ -572,12 +572,17 @@ class AdminPortalPostgresIntegrationTests {
                 .asText();
     }
 
-    private void payForAppointment(String appointmentId, UUID patientUserId)
+    private void payForAppointment(String appointmentId, TestFixture fixture)
             throws Exception {
 
         mockMvc.perform(
+                patch("/api/v1/doctor/appointments/" + appointmentId + "/accept")
+                        .with(doctorJwt(fixture.doctorUserId()))
+        ).andExpect(status().isOk());
+
+        mockMvc.perform(
                 post("/api/v1/appointments/" + appointmentId + "/payments")
-                        .with(customerJwt(patientUserId))
+                        .with(customerJwt(fixture.patientUserId()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"method": "CARD"}
@@ -591,7 +596,7 @@ class AdminPortalPostgresIntegrationTests {
 
         TestFixture fixture = createFixture();
         String appointmentId = bookAppointment(fixture);
-        payForAppointment(appointmentId, fixture.patientUserId());
+        payForAppointment(appointmentId, fixture);
 
         mockMvc.perform(
                 delete(ADMIN_URL + "/users/" + fixture.doctorUserId())

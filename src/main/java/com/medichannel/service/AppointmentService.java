@@ -51,6 +51,7 @@ public class AppointmentService {
     private static final List<AppointmentStatus> ACTIVE_STATUSES =
             List.of(
                     AppointmentStatus.BOOKED,
+                    AppointmentStatus.CHECKED_IN,
                     AppointmentStatus.ARRIVED,
                     AppointmentStatus.IN_CONSULTATION
             );
@@ -518,8 +519,18 @@ public class AppointmentService {
                     "Only booked appointments can be checked in."
             );
         }
+        if (!"ACCEPTED".equals(appointment.getAcceptanceStatus())) {
+            throw new ConflictException(
+                    "The doctor must accept the appointment before check-in."
+            );
+        }
+        if (appointment.getPaymentStatus() != PaymentStatus.PAID) {
+            throw new ConflictException(
+                    "The appointment must be paid before check-in."
+            );
+        }
 
-        appointment.markArrived(clock.instant());
+        appointment.markCheckedIn(clock.instant());
         Appointment saved = appointmentRepository.saveAndFlush(
                 appointment
         );
@@ -530,7 +541,7 @@ public class AppointmentService {
                 "Patient checked in",
                 "The patient for appointment #"
                         + saved.getAppointmentNumber()
-                        + " has checked in.",
+                        + " has checked in and is waiting for arrival confirmation.",
                 saved.getId()
         );
 
@@ -632,6 +643,22 @@ public class AppointmentService {
                 appointmentId
         );
 
+        if (appointment.getStatus() != AppointmentStatus.BOOKED) {
+            throw new ConflictException(
+                    "Only booked appointments can be accepted."
+            );
+        }
+        if (!"PENDING".equals(appointment.getAcceptanceStatus())) {
+            throw new ConflictException(
+                    "This appointment has already been accepted or declined."
+            );
+        }
+        if (appointment.getPaymentStatus() != PaymentStatus.PENDING) {
+            throw new ConflictException(
+                    "An appointment that is already paid cannot be accepted."
+            );
+        }
+
         appointment.acceptByDoctor(clock.instant());
         Appointment saved = appointmentRepository.saveAndFlush(appointment);
 
@@ -661,6 +688,22 @@ public class AppointmentService {
                 doctorUserId,
                 appointmentId
         );
+
+        if (appointment.getStatus() != AppointmentStatus.BOOKED) {
+            throw new ConflictException(
+                    "Only booked appointments can be declined."
+            );
+        }
+        if (!"PENDING".equals(appointment.getAcceptanceStatus())) {
+            throw new ConflictException(
+                    "This appointment has already been accepted or declined."
+            );
+        }
+        if (appointment.getPaymentStatus() != PaymentStatus.PENDING) {
+            throw new ConflictException(
+                    "An appointment that is already paid cannot be declined."
+            );
+        }
 
         String trimmedReason = reason == null ? "" : reason.trim();
         if (trimmedReason.isBlank()) {
@@ -783,9 +826,19 @@ public class AppointmentService {
                 appointmentId
         );
 
-        if (appointment.getStatus() != AppointmentStatus.BOOKED) {
+        if (appointment.getStatus() != AppointmentStatus.CHECKED_IN) {
             throw new ConflictException(
-                    "Only booked appointments can be marked as arrived."
+                    "Only checked-in appointments can be marked as arrived."
+            );
+        }
+        if (!"ACCEPTED".equals(appointment.getAcceptanceStatus())) {
+            throw new ConflictException(
+                    "The doctor must accept the appointment before arrival."
+            );
+        }
+        if (appointment.getPaymentStatus() != PaymentStatus.PAID) {
+            throw new ConflictException(
+                    "The appointment must be paid before arrival."
             );
         }
 
@@ -822,9 +875,19 @@ public class AppointmentService {
                         "Appointment not found."
                 ));
 
-        if (appointment.getStatus() != AppointmentStatus.BOOKED) {
+        if (appointment.getStatus() != AppointmentStatus.CHECKED_IN) {
             throw new ConflictException(
-                    "Only booked appointments can be marked as arrived."
+                    "Only checked-in appointments can be marked as arrived."
+            );
+        }
+        if (!"ACCEPTED".equals(appointment.getAcceptanceStatus())) {
+            throw new ConflictException(
+                    "The doctor must accept the appointment before arrival."
+            );
+        }
+        if (appointment.getPaymentStatus() != PaymentStatus.PAID) {
+            throw new ConflictException(
+                    "The appointment must be paid before arrival."
             );
         }
 
@@ -861,18 +924,25 @@ public class AppointmentService {
 
         ensureSessionAcceptsConsultation(appointment);
 
+        if (!"ACCEPTED".equals(appointment.getAcceptanceStatus())) {
+            throw new ConflictException(
+                    "The doctor must accept the appointment before the consultation starts."
+            );
+        }
+
         boolean physical = appointment.getSession().getConsultationType()
                 == ConsultationType.PHYSICAL;
 
         if (physical
                 && appointment.getStatus() != AppointmentStatus.ARRIVED) {
             throw new ConflictException(
-                    "Physical consultations require patient check-in before they can start."
+                    "Physical consultations require doctor-confirmed arrival before they can start."
             );
         }
 
         if (!physical
                 && appointment.getStatus() != AppointmentStatus.BOOKED
+                && appointment.getStatus() != AppointmentStatus.CHECKED_IN
                 && appointment.getStatus() != AppointmentStatus.ARRIVED) {
             throw new ConflictException(
                     "The consultation cannot be started from its current status."
@@ -950,9 +1020,14 @@ public class AppointmentService {
         );
 
         if (appointment.getStatus() != AppointmentStatus.BOOKED
-                && appointment.getStatus() != AppointmentStatus.ARRIVED) {
+                && appointment.getStatus() != AppointmentStatus.CHECKED_IN) {
             throw new ConflictException(
                     "This appointment cannot be marked as a no-show."
+            );
+        }
+        if (!"ACCEPTED".equals(appointment.getAcceptanceStatus())) {
+            throw new ConflictException(
+                    "The doctor must accept the appointment before marking a no-show."
             );
         }
 
@@ -1049,7 +1124,10 @@ public class AppointmentService {
             if (waiting.isPresent()) {
                 Appointment candidate = waiting.get();
 
-                if (candidate.getPaymentStatus() != PaymentStatus.PAID) {
+                if (candidate.getPaymentStatus() != PaymentStatus.PAID
+                        || !"ACCEPTED".equals(
+                                candidate.getAcceptanceStatus()
+                        )) {
                     paymentRequired = true;
                 } else {
                     candidate.startConsultation(clock.instant());
@@ -1150,6 +1228,8 @@ public class AppointmentService {
                 )
                 .filter(appointment -> appointment.getStatus()
                         == AppointmentStatus.BOOKED
+                        || appointment.getStatus()
+                        == AppointmentStatus.CHECKED_IN
                         || appointment.getStatus()
                         == AppointmentStatus.ARRIVED)
                 .filter(appointment -> !notificationRepository
@@ -1436,6 +1516,7 @@ public class AppointmentService {
                         ? null
                         : session.getRoom().getRoomNumber(),
                 appointment.getPaymentMethod(),
+                appointment.getCheckedInAt(),
                 appointment.getArrivedAt(),
                 appointment.getConsultationStartedAt(),
                 appointment.getConsultationCompletedAt(),
@@ -1511,6 +1592,7 @@ public class AppointmentService {
                 appointment.getPaymentMethod(),
                 session.getFeeLkr(),
                 appointment.getCreatedAt(),
+                appointment.getCheckedInAt(),
                 appointment.getArrivedAt(),
                 appointment.getConsultationStartedAt(),
                 appointment.getConsultationCompletedAt(),
@@ -1558,6 +1640,7 @@ public class AppointmentService {
                 appointment.getPaymentMethod(),
                 session.getFeeLkr(),
                 appointment.getCreatedAt(),
+                appointment.getCheckedInAt(),
                 appointment.getArrivedAt(),
                 appointment.getConsultationStartedAt(),
                 appointment.getConsultationCompletedAt(),

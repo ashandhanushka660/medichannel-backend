@@ -40,6 +40,7 @@ public class SessionQueueService {
     private static final List<AppointmentStatus> ACTIVE_STATUSES =
             List.of(
                     AppointmentStatus.BOOKED,
+                    AppointmentStatus.CHECKED_IN,
                     AppointmentStatus.ARRIVED,
                     AppointmentStatus.IN_CONSULTATION
             );

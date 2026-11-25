@@ -136,21 +136,26 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 fixture.patientUserId()
         );
 
-        // 1. The patient checks in.
+        mockMvc.perform(
+                post(APPOINTMENTS_URL + "/" + appointmentId + "/payments")
+                        .with(customerJwt(fixture.patientUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"method": "CARD"}
+                                """)
+        ).andExpect(status().isConflict());
+
+        mockMvc.perform(
+                patch(DOCTOR_URL + "/" + appointmentId + "/accept")
+                        .with(doctorJwt(fixture.doctorUserId()))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.acceptanceStatus").value("ACCEPTED"));
+
         mockMvc.perform(
                 patch(APPOINTMENTS_URL + "/" + appointmentId + "/check-in")
                         .with(customerJwt(fixture.patientUserId()))
-        )
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("ARRIVED"))
-                .andExpect(jsonPath("$.arrivedAt").isNotEmpty());
-
-        // 2. A consultation cannot start before payment.
-        mockMvc.perform(
-                patch(DOCTOR_URL + "/" + appointmentId + "/start")
-                        .with(doctorJwt(fixture.doctorUserId()))
-        )
-                .andExpect(status().isConflict());
+        ).andExpect(status().isConflict());
 
         // 3. The patient records a simulated card payment.
         mockMvc.perform(
@@ -170,6 +175,32 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 .andExpect(jsonPath("$.paymentReference")
                         .value(org.hamcrest.Matchers.startsWith("PAY-")))
                 .andExpect(jsonPath("$.paidAt").isNotEmpty());
+
+        mockMvc.perform(
+                patch(DOCTOR_URL + "/" + appointmentId + "/arrive")
+                        .with(doctorJwt(fixture.doctorUserId()))
+        ).andExpect(status().isConflict());
+
+        mockMvc.perform(
+                patch(APPOINTMENTS_URL + "/" + appointmentId + "/check-in")
+                        .with(customerJwt(fixture.patientUserId()))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CHECKED_IN"))
+                .andExpect(jsonPath("$.checkedInAt").isNotEmpty());
+
+        mockMvc.perform(
+                patch(DOCTOR_URL + "/" + appointmentId + "/start")
+                        .with(doctorJwt(fixture.doctorUserId()))
+        ).andExpect(status().isConflict());
+
+        mockMvc.perform(
+                patch(DOCTOR_URL + "/" + appointmentId + "/arrive")
+                        .with(doctorJwt(fixture.doctorUserId()))
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ARRIVED"))
+                .andExpect(jsonPath("$.arrivedAt").isNotEmpty());
 
         // 4. The doctor starts and completes the consultation.
         mockMvc.perform(
@@ -191,7 +222,7 @@ class ConsultationLifecyclePostgresIntegrationTests {
         // 5. The persisted appointment reflects the lifecycle.
         java.util.Map<String, Object> row = jdbcTemplate.queryForMap(
                 """
-                SELECT status, payment_status, arrived_at,
+                SELECT status, payment_status, checked_in_at, arrived_at,
                        consultation_started_at, consultation_completed_at
                 FROM appointments
                 WHERE id = ?
@@ -201,6 +232,7 @@ class ConsultationLifecyclePostgresIntegrationTests {
 
         assertThat(row.get("status")).isEqualTo("COMPLETED");
         assertThat(row.get("payment_status")).isEqualTo("PAID");
+        assertThat(row.get("checked_in_at")).isNotNull();
         assertThat(row.get("arrived_at")).isNotNull();
         assertThat(row.get("consultation_started_at")).isNotNull();
         assertThat(row.get("consultation_completed_at")).isNotNull();
@@ -269,6 +301,7 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 fixture.patientUserId()
         );
 
+        acceptAppointment(paidAppointmentId, fixture.doctorUserId());
         recordPayment(paidAppointmentId, fixture.patientUserId());
 
         mockMvc.perform(
@@ -322,8 +355,10 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 fixture.sessionId(),
                 fixture.patientUserId()
         );
-        checkIn(completedAppointmentId, fixture.patientUserId());
+        acceptAppointment(completedAppointmentId, fixture.doctorUserId());
         recordPayment(completedAppointmentId, fixture.patientUserId());
+        checkIn(completedAppointmentId, fixture.patientUserId());
+        markArrived(completedAppointmentId, fixture.doctorUserId());
         startConsultation(completedAppointmentId, fixture.doctorUserId());
         completeConsultation(completedAppointmentId, fixture.doctorUserId());
 
@@ -479,10 +514,23 @@ class ConsultationLifecyclePostgresIntegrationTests {
         )
                 .andExpect(status().isConflict());
 
-        checkIn(bookedAppointmentId, fixture.patientUserId());
+        acceptAppointment(bookedAppointmentId, fixture.doctorUserId());
         recordPayment(bookedAppointmentId, fixture.patientUserId());
+        checkIn(bookedAppointmentId, fixture.patientUserId());
+        markArrived(bookedAppointmentId, fixture.doctorUserId());
         startConsultation(bookedAppointmentId, fixture.doctorUserId());
         completeConsultation(bookedAppointmentId, fixture.doctorUserId());
+
+        mockMvc.perform(
+                post(APPOINTMENTS_URL + "/" + bookedAppointmentId + "/review")
+                        .with(customerJwt(fixture.patientUserId()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"rating": 5, "comment": "Too early"}
+                                """)
+        ).andExpect(status().isConflict());
+
+        publishSummary(bookedAppointmentId, fixture.doctorUserId());
 
         // Only the patient who attended can review.
         mockMvc.perform(
@@ -610,8 +658,10 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 "Too early"
         )).isInstanceOf(ConflictException.class);
 
-        checkIn(appointmentId, fixture.patientUserId());
+        acceptAppointment(appointmentId, fixture.doctorUserId());
         recordPayment(appointmentId, fixture.patientUserId());
+        checkIn(appointmentId, fixture.patientUserId());
+        markArrived(appointmentId, fixture.doctorUserId());
         startConsultation(appointmentId, fixture.doctorUserId());
 
         // Only the patient owner and assigned doctor gain access once
@@ -750,6 +800,15 @@ class ConsultationLifecyclePostgresIntegrationTests {
         )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.unreadCount").value(0));
+
+        acceptAppointment(appointmentId, fixture.doctorUserId());
+        recordPayment(appointmentId, fixture.patientUserId());
+        checkIn(appointmentId, fixture.patientUserId());
+
+        mockMvc.perform(
+                patch(NOTIFICATIONS_URL + "/read-all")
+                        .with(customerJwt(fixture.patientUserId()))
+        ).andExpect(status().isOk());
 
         // A doctor action produces another unread notification for the
         // patient, which can then be cleared in bulk.
@@ -903,6 +962,24 @@ class ConsultationLifecyclePostgresIntegrationTests {
         return response.get("appointmentId").asText();
     }
 
+    private void acceptAppointment(String appointmentId, UUID doctorUserId)
+            throws Exception {
+
+        mockMvc.perform(
+                patch(DOCTOR_URL + "/" + appointmentId + "/accept")
+                        .with(doctorJwt(doctorUserId))
+        ).andExpect(status().isOk());
+    }
+
+    private void markArrived(String appointmentId, UUID doctorUserId)
+            throws Exception {
+
+        mockMvc.perform(
+                patch(DOCTOR_URL + "/" + appointmentId + "/arrive")
+                        .with(doctorJwt(doctorUserId))
+        ).andExpect(status().isOk());
+    }
+
     private void checkIn(String appointmentId, UUID patientUserId)
             throws Exception {
 
@@ -941,6 +1018,24 @@ class ConsultationLifecyclePostgresIntegrationTests {
                 patch(DOCTOR_URL + "/" + appointmentId + "/complete")
                         .with(doctorJwt(doctorUserId))
         ).andExpect(status().isOk());
+    }
+
+    private void publishSummary(String appointmentId, UUID doctorUserId)
+            throws Exception {
+
+        mockMvc.perform(
+                post(APPOINTMENTS_URL + "/" + appointmentId + "/summary")
+                        .with(doctorJwt(doctorUserId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(summaryJson(
+                                "Headache",
+                                "Tension headache",
+                                "Rest and hydration",
+                                "Paracetamol 500mg",
+                                "Review in two weeks",
+                                null
+                        ))
+        ).andExpect(status().isCreated());
     }
 
     private String summaryJson(

@@ -435,6 +435,11 @@ class AppointmentApiPostgresIntegrationTests {
         )
                 .andExpect(status().isBadRequest());
 
+        mockMvc.perform(
+                patch("/api/v1/doctor/appointments/" + appointmentId + "/accept")
+                        .with(doctorJwt(doctorUserId(fixture.sessionId())))
+        ).andExpect(status().isOk());
+
         // Once paid, the patient can no longer cancel the appointment.
         mockMvc.perform(
                 post(APPOINTMENTS_URL + "/" + appointmentId + "/payments")

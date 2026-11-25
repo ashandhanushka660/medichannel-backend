@@ -44,6 +44,7 @@ public class DoctorSessionService {
     private static final List<AppointmentStatus> ACTIVE_APPOINTMENT_STATUSES =
             List.of(
                     AppointmentStatus.BOOKED,
+                    AppointmentStatus.CHECKED_IN,
                     AppointmentStatus.ARRIVED,
                     AppointmentStatus.IN_CONSULTATION
             );
@@ -344,6 +345,7 @@ public class DoctorSessionService {
         for (Appointment appointment : appointmentRepository
                 .findBySession_IdOrderByAppointmentNumberAsc(sessionId)) {
             if (appointment.getStatus() == AppointmentStatus.BOOKED
+                    || appointment.getStatus() == AppointmentStatus.CHECKED_IN
                     || appointment.getStatus() == AppointmentStatus.ARRIVED
                     || appointment.getStatus() == AppointmentStatus.IN_CONSULTATION) {
                 appointment.cancelByStaff(clock.instant(), encryptedReason);
@@ -400,6 +402,7 @@ public class DoctorSessionService {
         for (Appointment appointment : appointmentRepository
                 .findBySession_IdOrderByAppointmentNumberAsc(sessionId)) {
             if (appointment.getStatus() == AppointmentStatus.BOOKED
+                    || appointment.getStatus() == AppointmentStatus.CHECKED_IN
                     || appointment.getStatus() == AppointmentStatus.ARRIVED) {
                 LocalDateTime estimate = LocalDateTime.of(
                         session.getSessionDate(),

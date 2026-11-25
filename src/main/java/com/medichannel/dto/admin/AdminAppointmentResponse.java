@@ -34,6 +34,7 @@ public record AdminAppointmentResponse(
         BigDecimal feeLkr,
 
         Instant bookedAt,
+        Instant checkedInAt,
         Instant arrivedAt,
         Instant consultationStartedAt,
         Instant consultationCompletedAt,

@@ -36,6 +36,7 @@ public record DoctorAppointmentResponse(
         BigDecimal consultationFeeLkr,
 
         Instant bookedAt,
+        Instant checkedInAt,
         Instant arrivedAt,
         Instant consultationStartedAt,
         Instant consultationCompletedAt,

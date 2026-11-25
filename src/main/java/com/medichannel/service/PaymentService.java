@@ -102,6 +102,18 @@ public class PaymentService {
             );
         }
 
+        if (!"ACCEPTED".equals(appointment.getAcceptanceStatus())) {
+            throw new ConflictException(
+                    "The doctor must accept the appointment before payment."
+            );
+        }
+
+        if (appointment.getStatus() != AppointmentStatus.BOOKED) {
+            throw new ConflictException(
+                    "Only booked appointments can be paid."
+            );
+        }
+
         if (appointment.getPaymentStatus() == PaymentStatus.PAID
                 || paymentRepository.existsByAppointment_IdAndStatus(
                         appointmentId,

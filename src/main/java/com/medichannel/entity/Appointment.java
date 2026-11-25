@@ -135,6 +135,9 @@ public class Appointment {
     @Column(name = "cancellation_reason_encrypted", columnDefinition = "TEXT")
     private String cancellationReasonEncrypted;
 
+    @Column(name = "checked_in_at")
+    private Instant checkedInAt;
+
     @Column(name = "arrived_at")
     private Instant arrivedAt;
 
@@ -278,8 +281,25 @@ public class Appointment {
     }
 
     public void acceptByDoctor(Instant time) {
-        if (status == AppointmentStatus.CANCELLED) {
-            throw new IllegalStateException("Cancelled appointments cannot be accepted.");
+        if (status != AppointmentStatus.BOOKED) {
+            throw new IllegalStateException(
+                    "Only booked appointments can be accepted."
+            );
+        }
+        if (!"PENDING".equals(acceptanceStatus)) {
+            throw new IllegalStateException(
+                    "This appointment has already been accepted or declined."
+            );
+        }
+        if (paymentStatus != PaymentStatus.PENDING) {
+            throw new IllegalStateException(
+                    "An appointment that is already paid cannot be accepted."
+            );
+        }
+        if (time == null) {
+            throw new IllegalArgumentException(
+                    "Acceptance time is required."
+            );
         }
         this.acceptanceStatus = "ACCEPTED";
         this.doctorAcceptedAt = time;
@@ -289,8 +309,20 @@ public class Appointment {
         Instant time,
         String encryptedCancellationReason
     ) {
-        if (status == AppointmentStatus.COMPLETED) {
-            throw new IllegalStateException("Completed appointments cannot be declined.");
+        if (status != AppointmentStatus.BOOKED) {
+            throw new IllegalStateException(
+                    "Only booked appointments can be declined."
+            );
+        }
+        if (!"PENDING".equals(acceptanceStatus)) {
+            throw new IllegalStateException(
+                    "This appointment has already been accepted or declined."
+            );
+        }
+        if (paymentStatus != PaymentStatus.PENDING) {
+            throw new IllegalStateException(
+                    "An appointment that is already paid cannot be declined."
+            );
         }
         if (time == null) {
             throw new IllegalArgumentException("Cancellation time is required.");
@@ -332,6 +364,18 @@ public class Appointment {
             );
         }
 
+        if (status != AppointmentStatus.BOOKED) {
+            throw new IllegalStateException(
+                    "Only booked appointments can be paid."
+            );
+        }
+
+        if (!"ACCEPTED".equals(acceptanceStatus)) {
+            throw new IllegalStateException(
+                    "The doctor must accept the appointment before payment."
+            );
+        }
+
         if (paymentStatus == PaymentStatus.PAID) {
             throw new IllegalStateException(
                 "Appointment has already been paid."
@@ -348,13 +392,48 @@ public class Appointment {
         this.paymentStatus = PaymentStatus.PAID;
     }
 
-    public void markArrived(Instant arrivalTime) {
+    public void markCheckedIn(Instant checkInTime) {
         if (status != AppointmentStatus.BOOKED) {
             throw new IllegalStateException(
-                "Only booked appointments can be marked as arrived."
+                    "Only booked appointments can be checked in."
+            );
+        }
+        if (!"ACCEPTED".equals(acceptanceStatus)) {
+            throw new IllegalStateException(
+                    "The doctor must accept the appointment before check-in."
+            );
+        }
+        if (paymentStatus != PaymentStatus.PAID) {
+            throw new IllegalStateException(
+                    "The appointment must be paid before check-in."
+            );
+        }
+        if (checkInTime == null) {
+            throw new IllegalArgumentException(
+                    "Check-in time is required."
             );
         }
 
+        this.checkedInAt = checkInTime;
+        status = AppointmentStatus.CHECKED_IN;
+    }
+
+    public void markArrived(Instant arrivalTime) {
+        if (status != AppointmentStatus.CHECKED_IN) {
+            throw new IllegalStateException(
+                    "Only checked-in appointments can be marked as arrived."
+            );
+        }
+        if (!"ACCEPTED".equals(acceptanceStatus)) {
+            throw new IllegalStateException(
+                    "The doctor must accept the appointment before arrival."
+            );
+        }
+        if (paymentStatus != PaymentStatus.PAID) {
+            throw new IllegalStateException(
+                    "The appointment must be paid before arrival."
+            );
+        }
         if (arrivalTime == null) {
             throw new IllegalArgumentException(
                 "Arrival time is required."
@@ -366,18 +445,31 @@ public class Appointment {
     }
 
     public void startConsultation(Instant startTime) {
-        if (status != AppointmentStatus.BOOKED
-                && status != AppointmentStatus.ARRIVED) {
+        if (!"ACCEPTED".equals(acceptanceStatus)) {
             throw new IllegalStateException(
-                "Appointment cannot enter consultation from its current status."
+                    "The doctor must accept the appointment before the consultation starts."
+            );
+        }
+        if (paymentStatus != PaymentStatus.PAID) {
+            throw new IllegalStateException(
+                    "The appointment must be paid before the consultation starts."
             );
         }
 
-        if (session != null
-                && session.getConsultationType() == ConsultationType.PHYSICAL
+        boolean physical = session != null
+                && session.getConsultationType() == ConsultationType.PHYSICAL;
+
+        if (physical) {
+            if (status != AppointmentStatus.ARRIVED) {
+                throw new IllegalStateException(
+                        "Physical consultations require doctor-confirmed arrival before they can start."
+                );
+            }
+        } else if (status != AppointmentStatus.BOOKED
+                && status != AppointmentStatus.CHECKED_IN
                 && status != AppointmentStatus.ARRIVED) {
             throw new IllegalStateException(
-                "Physical consultations require patient check-in before they can start."
+                "Appointment cannot enter consultation from its current status."
             );
         }
 
@@ -387,8 +479,7 @@ public class Appointment {
             );
         }
 
-        if (status == AppointmentStatus.BOOKED) {
-            // Online consultations may start without a separate check-in step.
+        if (status != AppointmentStatus.ARRIVED) {
             this.arrivedAt = startTime;
         }
 
@@ -422,9 +513,14 @@ public class Appointment {
 
     public void markNoShow() {
         if (status != AppointmentStatus.BOOKED
-                && status != AppointmentStatus.ARRIVED) {
+                && status != AppointmentStatus.CHECKED_IN) {
             throw new IllegalStateException(
                 "This appointment cannot be marked as a no-show."
+            );
+        }
+        if (!"ACCEPTED".equals(acceptanceStatus)) {
+            throw new IllegalStateException(
+                    "The doctor must accept the appointment before marking a no-show."
             );
         }
 
@@ -533,6 +629,10 @@ public class Appointment {
 
     public String getCancellationReasonEncrypted() {
         return cancellationReasonEncrypted;
+    }
+
+    public Instant getCheckedInAt() {
+        return checkedInAt;
     }
 
     public Instant getArrivedAt() {

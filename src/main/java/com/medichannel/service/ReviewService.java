@@ -20,6 +20,7 @@ import com.medichannel.enums.NotificationType;
 import com.medichannel.exception.ConflictException;
 import com.medichannel.exception.ResourceNotFoundException;
 import com.medichannel.repository.AppointmentRepository;
+import com.medichannel.repository.ConsultationSummaryRepository;
 import com.medichannel.repository.DoctorRepository;
 import com.medichannel.repository.ReviewRepository;
 import com.medichannel.repository.UserRepository;
@@ -29,6 +30,7 @@ public class ReviewService {
 
     private final ReviewRepository reviewRepository;
     private final AppointmentRepository appointmentRepository;
+    private final ConsultationSummaryRepository summaryRepository;
     private final DoctorRepository doctorRepository;
     private final AppointmentAccessPolicy accessPolicy;
     private final NotificationService notificationService;
@@ -38,6 +40,7 @@ public class ReviewService {
     public ReviewService(
             ReviewRepository reviewRepository,
             AppointmentRepository appointmentRepository,
+            ConsultationSummaryRepository summaryRepository,
             DoctorRepository doctorRepository,
             AppointmentAccessPolicy accessPolicy,
             NotificationService notificationService,
@@ -46,6 +49,7 @@ public class ReviewService {
     ) {
         this.reviewRepository = reviewRepository;
         this.appointmentRepository = appointmentRepository;
+        this.summaryRepository = summaryRepository;
         this.doctorRepository = doctorRepository;
         this.accessPolicy = accessPolicy;
         this.notificationService = notificationService;
@@ -70,6 +74,12 @@ public class ReviewService {
         if (appointment.getStatus() != AppointmentStatus.COMPLETED) {
             throw new ConflictException(
                     "Feedback can only be submitted for a completed consultation."
+            );
+        }
+
+        if (!summaryRepository.existsByAppointment_Id(appointmentId)) {
+            throw new ConflictException(
+                    "A consultation summary must be published before feedback."
             );
         }
 

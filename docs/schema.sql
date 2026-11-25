@@ -2,9 +2,10 @@
 -- PostgreSQL database dump
 --
 
+\restrict kZt7b5vWViHiZyAUzgzhkOWCksaK5X26dAGTiIe4dv4g4pYmwmYKCwkdMFjx9tK
 
--- Dumped from database version 18.6
--- Dumped by pg_dump version 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1)
+-- Dumped from database version 15.20 (Debian 15.20-0+deb12u1)
+-- Dumped by pg_dump version 17.12 (Debian 17.12-1.pgdg12+1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -18,13 +19,125 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
---
--- Name: public; Type: SCHEMA; Schema: -; Owner: -
---
-
-CREATE SCHEMA public;
-
-
+ALTER TABLE IF EXISTS ONLY public.users DROP CONSTRAINT IF EXISTS fk_users_role;
+ALTER TABLE IF EXISTS ONLY public.consultation_summaries DROP CONSTRAINT IF EXISTS fk_summaries_patient;
+ALTER TABLE IF EXISTS ONLY public.consultation_summaries DROP CONSTRAINT IF EXISTS fk_summaries_doctor;
+ALTER TABLE IF EXISTS ONLY public.consultation_summaries DROP CONSTRAINT IF EXISTS fk_summaries_appointment;
+ALTER TABLE IF EXISTS ONLY public.doctor_sessions DROP CONSTRAINT IF EXISTS fk_sessions_room;
+ALTER TABLE IF EXISTS ONLY public.doctor_sessions DROP CONSTRAINT IF EXISTS fk_sessions_doctor;
+ALTER TABLE IF EXISTS ONLY public.reviews DROP CONSTRAINT IF EXISTS fk_reviews_patient;
+ALTER TABLE IF EXISTS ONLY public.reviews DROP CONSTRAINT IF EXISTS fk_reviews_doctor;
+ALTER TABLE IF EXISTS ONLY public.reviews DROP CONSTRAINT IF EXISTS fk_reviews_appointment;
+ALTER TABLE IF EXISTS ONLY public.payments DROP CONSTRAINT IF EXISTS fk_payments_recorded_by;
+ALTER TABLE IF EXISTS ONLY public.payments DROP CONSTRAINT IF EXISTS fk_payments_appointment;
+ALTER TABLE IF EXISTS ONLY public.patients DROP CONSTRAINT IF EXISTS fk_patients_user;
+ALTER TABLE IF EXISTS ONLY public.notifications DROP CONSTRAINT IF EXISTS fk_notifications_user;
+ALTER TABLE IF EXISTS ONLY public.notifications DROP CONSTRAINT IF EXISTS fk_notifications_appointment;
+ALTER TABLE IF EXISTS ONLY public.notices DROP CONSTRAINT IF EXISTS fk_notices_created_by;
+ALTER TABLE IF EXISTS ONLY public.doctors DROP CONSTRAINT IF EXISTS fk_doctors_user;
+ALTER TABLE IF EXISTS ONLY public.doctors DROP CONSTRAINT IF EXISTS fk_doctors_specialisation;
+ALTER TABLE IF EXISTS ONLY public.chat_messages DROP CONSTRAINT IF EXISTS fk_chat_messages_sender;
+ALTER TABLE IF EXISTS ONLY public.chat_messages DROP CONSTRAINT IF EXISTS fk_chat_messages_appointment;
+ALTER TABLE IF EXISTS ONLY public.appointments DROP CONSTRAINT IF EXISTS fk_appointments_session;
+ALTER TABLE IF EXISTS ONLY public.appointments DROP CONSTRAINT IF EXISTS fk_appointments_patient;
+DROP TRIGGER IF EXISTS trg_protect_doctor_session_history ON public.doctor_sessions;
+DROP TRIGGER IF EXISTS trg_protect_appointment_history ON public.appointments;
+DROP TRIGGER IF EXISTS trg_prevent_session_overlap ON public.doctor_sessions;
+DROP TRIGGER IF EXISTS trg_enforce_booking_cancellation_rules ON public.appointments;
+DROP TRIGGER IF EXISTS trg_audit_logs_no_update ON public.audit_logs;
+DROP TRIGGER IF EXISTS trg_audit_logs_no_truncate ON public.audit_logs;
+DROP TRIGGER IF EXISTS trg_audit_logs_no_delete ON public.audit_logs;
+DROP TRIGGER IF EXISTS trg_assign_appointment_number ON public.appointments;
+DROP INDEX IF EXISTS public.uq_users_email_lookup_hash;
+DROP INDEX IF EXISTS public.uq_patients_nic_lookup_hash;
+DROP INDEX IF EXISTS public.uq_completed_payment_per_appointment;
+DROP INDEX IF EXISTS public.uq_active_appointment_patient_session;
+DROP INDEX IF EXISTS public.idx_users_role_id;
+DROP INDEX IF EXISTS public.idx_users_password_change_required;
+DROP INDEX IF EXISTS public.idx_users_account_status;
+DROP INDEX IF EXISTS public.idx_summaries_patient_date;
+DROP INDEX IF EXISTS public.idx_summaries_doctor_date;
+DROP INDEX IF EXISTS public.idx_sessions_room_date_status;
+DROP INDEX IF EXISTS public.idx_sessions_room_date;
+DROP INDEX IF EXISTS public.idx_sessions_doctor_date_status;
+DROP INDEX IF EXISTS public.idx_sessions_doctor_date;
+DROP INDEX IF EXISTS public.idx_sessions_date_status;
+DROP INDEX IF EXISTS public.idx_rooms_active;
+DROP INDEX IF EXISTS public.idx_reviews_patient_created;
+DROP INDEX IF EXISTS public.idx_reviews_moderation;
+DROP INDEX IF EXISTS public.idx_reviews_doctor_created;
+DROP INDEX IF EXISTS public.idx_rate_limits_window;
+DROP INDEX IF EXISTS public.idx_payments_status_created;
+DROP INDEX IF EXISTS public.idx_payments_appointment_created;
+DROP INDEX IF EXISTS public.idx_notifications_user_unread;
+DROP INDEX IF EXISTS public.idx_notifications_user_created;
+DROP INDEX IF EXISTS public.idx_notifications_appointment;
+DROP INDEX IF EXISTS public.idx_notices_published;
+DROP INDEX IF EXISTS public.idx_notices_created;
+DROP INDEX IF EXISTS public.idx_doctors_specialisation_id;
+DROP INDEX IF EXISTS public.idx_chat_messages_sender_sent;
+DROP INDEX IF EXISTS public.idx_chat_messages_appointment_sent;
+DROP INDEX IF EXISTS public.idx_audit_logs_user_id;
+DROP INDEX IF EXISTS public.idx_audit_logs_created_at;
+DROP INDEX IF EXISTS public.idx_audit_logs_appointment_id;
+DROP INDEX IF EXISTS public.idx_appointments_session_visible_number;
+DROP INDEX IF EXISTS public.idx_appointments_session_status_number;
+DROP INDEX IF EXISTS public.idx_appointments_session_active_status;
+DROP INDEX IF EXISTS public.idx_appointments_payment_status;
+DROP INDEX IF EXISTS public.idx_appointments_patient_visible;
+DROP INDEX IF EXISTS public.idx_appointments_patient_created;
+DROP INDEX IF EXISTS public.flyway_schema_history_s_idx;
+ALTER TABLE IF EXISTS ONLY public.users DROP CONSTRAINT IF EXISTS users_pkey;
+ALTER TABLE IF EXISTS ONLY public.consultation_summaries DROP CONSTRAINT IF EXISTS uq_summary_appointment;
+ALTER TABLE IF EXISTS ONLY public.reviews DROP CONSTRAINT IF EXISTS uq_review_appointment;
+ALTER TABLE IF EXISTS ONLY public.payments DROP CONSTRAINT IF EXISTS uq_payments_reference;
+ALTER TABLE IF EXISTS ONLY public.appointments DROP CONSTRAINT IF EXISTS uq_appointment_session_number;
+ALTER TABLE IF EXISTS ONLY public.appointments DROP CONSTRAINT IF EXISTS uq_appointment_booking_reference;
+ALTER TABLE IF EXISTS ONLY public.specialisations DROP CONSTRAINT IF EXISTS specialisations_pkey;
+ALTER TABLE IF EXISTS ONLY public.specialisations DROP CONSTRAINT IF EXISTS specialisations_name_key;
+ALTER TABLE IF EXISTS ONLY public.rooms DROP CONSTRAINT IF EXISTS rooms_room_number_key;
+ALTER TABLE IF EXISTS ONLY public.rooms DROP CONSTRAINT IF EXISTS rooms_pkey;
+ALTER TABLE IF EXISTS ONLY public.roles DROP CONSTRAINT IF EXISTS roles_pkey;
+ALTER TABLE IF EXISTS ONLY public.roles DROP CONSTRAINT IF EXISTS roles_name_key;
+ALTER TABLE IF EXISTS ONLY public.reviews DROP CONSTRAINT IF EXISTS reviews_pkey;
+ALTER TABLE IF EXISTS ONLY public.api_rate_limits DROP CONSTRAINT IF EXISTS pk_api_rate_limits;
+ALTER TABLE IF EXISTS ONLY public.payments DROP CONSTRAINT IF EXISTS payments_pkey;
+ALTER TABLE IF EXISTS ONLY public.patients DROP CONSTRAINT IF EXISTS patients_user_id_key;
+ALTER TABLE IF EXISTS ONLY public.patients DROP CONSTRAINT IF EXISTS patients_pkey;
+ALTER TABLE IF EXISTS ONLY public.notifications DROP CONSTRAINT IF EXISTS notifications_pkey;
+ALTER TABLE IF EXISTS ONLY public.notices DROP CONSTRAINT IF EXISTS notices_pkey;
+ALTER TABLE IF EXISTS ONLY public.flyway_schema_history DROP CONSTRAINT IF EXISTS flyway_schema_history_pk;
+ALTER TABLE IF EXISTS ONLY public.doctors DROP CONSTRAINT IF EXISTS doctors_user_id_key;
+ALTER TABLE IF EXISTS ONLY public.doctors DROP CONSTRAINT IF EXISTS doctors_registration_number_key;
+ALTER TABLE IF EXISTS ONLY public.doctors DROP CONSTRAINT IF EXISTS doctors_pkey;
+ALTER TABLE IF EXISTS ONLY public.doctor_sessions DROP CONSTRAINT IF EXISTS doctor_sessions_pkey;
+ALTER TABLE IF EXISTS ONLY public.consultation_summaries DROP CONSTRAINT IF EXISTS consultation_summaries_pkey;
+ALTER TABLE IF EXISTS ONLY public.chat_messages DROP CONSTRAINT IF EXISTS chat_messages_pkey;
+ALTER TABLE IF EXISTS ONLY public.audit_logs DROP CONSTRAINT IF EXISTS audit_logs_pkey;
+ALTER TABLE IF EXISTS ONLY public.appointments DROP CONSTRAINT IF EXISTS appointments_pkey;
+DROP TABLE IF EXISTS public.users;
+DROP TABLE IF EXISTS public.specialisations;
+DROP TABLE IF EXISTS public.rooms;
+DROP TABLE IF EXISTS public.roles;
+DROP TABLE IF EXISTS public.reviews;
+DROP TABLE IF EXISTS public.payments;
+DROP TABLE IF EXISTS public.patients;
+DROP TABLE IF EXISTS public.notifications;
+DROP TABLE IF EXISTS public.notices;
+DROP TABLE IF EXISTS public.flyway_schema_history;
+DROP TABLE IF EXISTS public.doctors;
+DROP TABLE IF EXISTS public.doctor_sessions;
+DROP TABLE IF EXISTS public.consultation_summaries;
+DROP TABLE IF EXISTS public.chat_messages;
+DROP TABLE IF EXISTS public.audit_logs;
+DROP TABLE IF EXISTS public.appointments;
+DROP TABLE IF EXISTS public.api_rate_limits;
+DROP FUNCTION IF EXISTS public.protect_doctor_session_history();
+DROP FUNCTION IF EXISTS public.protect_appointment_history();
+DROP FUNCTION IF EXISTS public.prevent_session_overlap();
+DROP FUNCTION IF EXISTS public.enforce_booking_cancellation_rules();
+DROP FUNCTION IF EXISTS public.audit_logs_append_only_guard();
+DROP FUNCTION IF EXISTS public.assign_appointment_number();
 --
 -- Name: assign_appointment_number(); Type: FUNCTION; Schema: public; Owner: -
 --
@@ -33,15 +146,45 @@ CREATE FUNCTION public.assign_appointment_number() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
+    session_capacity INTEGER;
+    active_count INTEGER;
     allocated_number INTEGER;
 BEGIN
+    SELECT max_appointments
+      INTO session_capacity
+      FROM doctor_sessions
+     WHERE id = NEW.session_id
+       AND status = 'OPEN'
+       FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION
+            'Session does not exist, is not open, or is fully booked'
+            USING ERRCODE = '23514';
+    END IF;
+
+    SELECT COUNT(*)
+      INTO active_count
+      FROM appointments
+     WHERE session_id = NEW.session_id
+       AND status IN (
+           'BOOKED',
+           'CHECKED_IN',
+           'ARRIVED',
+           'IN_CONSULTATION'
+       );
+
+    IF active_count >= session_capacity THEN
+        RAISE EXCEPTION
+            'Session does not exist, is not open, or is fully booked'
+            USING ERRCODE = '23514';
+    END IF;
+
     UPDATE doctor_sessions
-    SET last_appointment_number = last_appointment_number + 1
-    WHERE id = NEW.session_id
-      AND status = 'OPEN'
-      AND last_appointment_number < max_appointments
+       SET last_appointment_number = last_appointment_number + 1
+     WHERE id = NEW.session_id
     RETURNING last_appointment_number
-    INTO allocated_number;
+      INTO allocated_number;
 
     IF NOT FOUND THEN
         RAISE EXCEPTION
@@ -50,6 +193,65 @@ BEGIN
     END IF;
 
     NEW.appointment_number := allocated_number;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: audit_logs_append_only_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.audit_logs_append_only_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'audit_logs is append-only: % is not permitted', TG_OP
+        USING ERRCODE = '23000';
+END;
+$$;
+
+
+--
+-- Name: enforce_booking_cancellation_rules(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_booking_cancellation_rules() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP <> 'UPDATE' THEN
+        RETURN NEW;
+    END IF;
+
+    -- Only a fresh transition into CANCELLED is checked.
+    IF NEW.status IS DISTINCT FROM 'CANCELLED'
+       OR OLD.status = 'CANCELLED' THEN
+        RETURN NEW;
+    END IF;
+
+    IF NEW.cancellation_reason_encrypted IS NULL
+       OR btrim(NEW.cancellation_reason_encrypted) = '' THEN
+        RAISE EXCEPTION 'Cancellation reason is required.'
+            USING ERRCODE = '23514';
+    END IF;
+
+    IF NEW.cancellation_reason_encrypted LIKE 'STAFF:%'
+       OR NEW.cancellation_reason_encrypted LIKE 'SYSTEM:%' THEN
+        RETURN NEW;
+    END IF;
+
+    IF OLD.status <> 'BOOKED' THEN
+        RAISE EXCEPTION
+            'Only booked appointments can be cancelled by patients.'
+            USING ERRCODE = '23514';
+    END IF;
+
+    IF OLD.payment_status <> 'PENDING' THEN
+        RAISE EXCEPTION
+            'Paid appointments cannot be cancelled by patients.'
+            USING ERRCODE = '23514';
+    END IF;
 
     RETURN NEW;
 END;
@@ -155,6 +357,22 @@ END;
 $$;
 
 
+--
+-- Name: protect_doctor_session_history(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_doctor_session_history() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'Doctor sessions are retained; change the session status instead.';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -193,15 +411,21 @@ CREATE TABLE public.appointments (
     consultation_completed_at timestamp with time zone,
     acceptance_status character varying(20) DEFAULT 'PENDING'::character varying NOT NULL,
     doctor_accepted_at timestamp with time zone,
+    cancellation_reason_encrypted text,
     patient_hidden_at timestamp with time zone,
     doctor_hidden_at timestamp with time zone,
+    delay_minutes integer DEFAULT 0 NOT NULL,
+    checked_in_at timestamp with time zone,
+    CONSTRAINT chk_appointment_acceptance_status CHECK (((acceptance_status)::text = ANY ((ARRAY['PENDING'::character varying, 'ACCEPTED'::character varying, 'DECLINED'::character varying])::text[]))),
     CONSTRAINT chk_appointment_cancelled_at CHECK (((((status)::text = 'CANCELLED'::text) AND (cancelled_at IS NOT NULL)) OR (((status)::text <> 'CANCELLED'::text) AND (cancelled_at IS NULL)))),
+    CONSTRAINT chk_appointment_checked_in_at CHECK ((((status)::text <> 'BOOKED'::text) OR (checked_in_at IS NULL))),
     CONSTRAINT chk_appointment_consultation_time_order CHECK (((consultation_completed_at IS NULL) OR ((consultation_started_at IS NOT NULL) AND (consultation_completed_at >= consultation_started_at)))),
-    CONSTRAINT chk_appointment_hidden_terminal CHECK ((((patient_hidden_at IS NULL) OR ((status)::text = ANY ((ARRAY['COMPLETED'::character varying, 'NO_SHOW'::character varying, 'CANCELLED'::character varying])::text[]))) AND ((doctor_hidden_at IS NULL) OR ((status)::text = ANY ((ARRAY['COMPLETED'::character varying, 'NO_SHOW'::character varying, 'CANCELLED'::character varying])::text[]))))),
-    CONSTRAINT chk_appointment_number CHECK (((appointment_number >= 1) AND (appointment_number <= 60))),
-    CONSTRAINT chk_appointment_payment_method CHECK (((((payment_status)::text = 'PENDING'::text) AND (payment_method IS NULL)) OR (((payment_status)::text = 'PAID'::text) AND (payment_method IS NOT NULL) AND ((payment_method)::text = ANY ((ARRAY['CASH'::character varying, 'CARD'::character varying])::text[]))))),
-    CONSTRAINT chk_appointment_payment_status CHECK (((payment_status)::text = ANY ((ARRAY['PENDING'::character varying, 'PAID'::character varying])::text[]))),
-    CONSTRAINT chk_appointment_status CHECK (((status)::text = ANY ((ARRAY['BOOKED'::character varying, 'ARRIVED'::character varying, 'IN_CONSULTATION'::character varying, 'COMPLETED'::character varying, 'NO_SHOW'::character varying, 'CANCELLED'::character varying])::text[])))
+    CONSTRAINT chk_appointment_delay CHECK ((delay_minutes >= 0)),
+    CONSTRAINT chk_appointment_hidden_terminal CHECK ((((patient_hidden_at IS NULL) OR ((status)::text = ANY (ARRAY[('COMPLETED'::character varying)::text, ('NO_SHOW'::character varying)::text, ('CANCELLED'::character varying)::text]))) AND ((doctor_hidden_at IS NULL) OR ((status)::text = ANY (ARRAY[('COMPLETED'::character varying)::text, ('NO_SHOW'::character varying)::text, ('CANCELLED'::character varying)::text]))))),
+    CONSTRAINT chk_appointment_number CHECK ((appointment_number > 0)),
+    CONSTRAINT chk_appointment_payment_method CHECK (((((payment_status)::text = 'PENDING'::text) AND (payment_method IS NULL)) OR (((payment_status)::text = 'PAID'::text) AND (payment_method IS NOT NULL) AND ((payment_method)::text = ANY (ARRAY[('CASH'::character varying)::text, ('CARD'::character varying)::text]))))),
+    CONSTRAINT chk_appointment_payment_status CHECK (((payment_status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('PAID'::character varying)::text]))),
+    CONSTRAINT chk_appointment_status CHECK (((status)::text = ANY ((ARRAY['BOOKED'::character varying, 'CHECKED_IN'::character varying, 'ARRIVED'::character varying, 'IN_CONSULTATION'::character varying, 'COMPLETED'::character varying, 'NO_SHOW'::character varying, 'CANCELLED'::character varying])::text[])))
 );
 
 
@@ -212,11 +436,12 @@ CREATE TABLE public.appointments (
 CREATE TABLE public.audit_logs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    user_email character varying(255),
     user_role character varying(50),
     action character varying(255) NOT NULL,
     details text,
-    ip_address character varying(100) DEFAULT '127.0.0.1'::character varying
+    ip_address character varying(100),
+    user_id uuid,
+    appointment_id uuid
 );
 
 
@@ -232,7 +457,7 @@ CREATE TABLE public.chat_messages (
     content text NOT NULL,
     sent_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT chk_chat_content_length CHECK (((char_length(content) >= 1) AND (char_length(content) <= 2000))),
-    CONSTRAINT chk_chat_sender_role CHECK (((sender_role)::text = ANY ((ARRAY['CUSTOMER'::character varying, 'DOCTOR'::character varying])::text[])))
+    CONSTRAINT chk_chat_sender_role CHECK (((sender_role)::text = ANY (ARRAY[('CUSTOMER'::character varying)::text, ('DOCTOR'::character varying)::text])))
 );
 
 
@@ -278,15 +503,15 @@ CREATE TABLE public.doctor_sessions (
     fee_lkr numeric(10,2) DEFAULT 0.00 NOT NULL,
     delay_minutes integer DEFAULT 0 NOT NULL,
     last_appointment_number integer DEFAULT 0 NOT NULL,
-    CONSTRAINT chk_consultation_type CHECK (((consultation_type)::text = ANY ((ARRAY['PHYSICAL'::character varying, 'ONLINE'::character varying])::text[]))),
-    CONSTRAINT chk_session_appointment_counter CHECK (((last_appointment_number >= 0) AND (last_appointment_number <= max_appointments))),
+    CONSTRAINT chk_consultation_type CHECK (((consultation_type)::text = ANY (ARRAY[('PHYSICAL'::character varying)::text, ('ONLINE'::character varying)::text]))),
+    CONSTRAINT chk_session_appointment_counter CHECK ((last_appointment_number >= 0)),
     CONSTRAINT chk_session_capacity CHECK ((max_appointments > 0)),
     CONSTRAINT chk_session_delay CHECK ((delay_minutes >= 0)),
     CONSTRAINT chk_session_fee CHECK ((fee_lkr >= (0)::numeric)),
     CONSTRAINT chk_session_max_appointments CHECK (((max_appointments >= 1) AND (max_appointments <= 60))),
     CONSTRAINT chk_session_minutes_per_patient CHECK (((minutes_per_patient >= 5) AND (minutes_per_patient <= 30))),
     CONSTRAINT chk_session_room CHECK (((((consultation_type)::text = 'PHYSICAL'::text) AND (room_id IS NOT NULL)) OR (((consultation_type)::text = 'ONLINE'::text) AND (room_id IS NULL)))),
-    CONSTRAINT chk_session_status CHECK (((status)::text = ANY ((ARRAY['SCHEDULED'::character varying, 'OPEN'::character varying, 'IN_PROGRESS'::character varying, 'COMPLETED'::character varying, 'CANCELLED'::character varying])::text[]))),
+    CONSTRAINT chk_session_status CHECK (((status)::text = ANY (ARRAY[('SCHEDULED'::character varying)::text, ('OPEN'::character varying)::text, ('IN_PROGRESS'::character varying)::text, ('COMPLETED'::character varying)::text, ('CANCELLED'::character varying)::text]))),
     CONSTRAINT chk_session_time CHECK ((end_time > start_time))
 );
 
@@ -364,7 +589,7 @@ CREATE TABLE public.notifications (
     read_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT chk_notification_read_state CHECK ((((is_read = false) AND (read_at IS NULL)) OR ((is_read = true) AND (read_at IS NOT NULL)))),
-    CONSTRAINT chk_notification_type CHECK (((type)::text = ANY ((ARRAY['APPOINTMENT_BOOKED'::character varying, 'APPOINTMENT_ARRIVED'::character varying, 'APPOINTMENT_CANCELLED'::character varying, 'APPOINTMENT_REMINDER'::character varying, 'PAYMENT_RECEIVED'::character varying, 'CONSULTATION_STARTED'::character varying, 'CONSULTATION_COMPLETED'::character varying, 'SUMMARY_AVAILABLE'::character varying, 'NEW_CHAT_MESSAGE'::character varying, 'REVIEW_RECEIVED'::character varying, 'ACCOUNT_STATUS_CHANGED'::character varying])::text[])))
+    CONSTRAINT chk_notification_type CHECK (((type)::text = ANY (ARRAY[('APPOINTMENT_BOOKED'::character varying)::text, ('APPOINTMENT_ARRIVED'::character varying)::text, ('APPOINTMENT_CANCELLED'::character varying)::text, ('APPOINTMENT_REMINDER'::character varying)::text, ('PAYMENT_RECEIVED'::character varying)::text, ('CALLED'::character varying)::text, ('CONSULTATION_STARTED'::character varying)::text, ('CONSULTATION_COMPLETED'::character varying)::text, ('SUMMARY_AVAILABLE'::character varying)::text, ('NEW_CHAT_MESSAGE'::character varying)::text, ('REVIEW_RECEIVED'::character varying)::text, ('ACCOUNT_STATUS_CHANGED'::character varying)::text])))
 );
 
 
@@ -405,9 +630,9 @@ CREATE TABLE public.payments (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT chk_payment_amount CHECK ((amount >= (0)::numeric)),
     CONSTRAINT chk_payment_currency CHECK (((currency)::text = 'LKR'::text)),
-    CONSTRAINT chk_payment_method CHECK (((method)::text = ANY ((ARRAY['CASH'::character varying, 'CARD'::character varying])::text[]))),
+    CONSTRAINT chk_payment_method CHECK (((method)::text = ANY (ARRAY[('CASH'::character varying)::text, ('CARD'::character varying)::text]))),
     CONSTRAINT chk_payment_paid_at CHECK (((((status)::text = 'COMPLETED'::text) AND (paid_at IS NOT NULL)) OR ((status)::text <> 'COMPLETED'::text))),
-    CONSTRAINT chk_payment_record_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'COMPLETED'::character varying, 'FAILED'::character varying, 'REFUNDED'::character varying])::text[])))
+    CONSTRAINT chk_payment_record_status CHECK (((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('COMPLETED'::character varying)::text, ('FAILED'::character varying)::text, ('REFUNDED'::character varying)::text])))
 );
 
 
@@ -426,7 +651,7 @@ CREATE TABLE public.reviews (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     moderation_status character varying(20) DEFAULT 'APPROVED'::character varying NOT NULL,
     CONSTRAINT chk_review_comment_length CHECK (((comment IS NULL) OR ((char_length((comment)::text) >= 1) AND (char_length((comment)::text) <= 1000)))),
-    CONSTRAINT chk_review_moderation_status CHECK (((moderation_status)::text = ANY ((ARRAY['PENDING'::character varying, 'APPROVED'::character varying, 'HIDDEN'::character varying])::text[]))),
+    CONSTRAINT chk_review_moderation_status CHECK (((moderation_status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('APPROVED'::character varying)::text, ('HIDDEN'::character varying)::text]))),
     CONSTRAINT chk_review_rating CHECK (((rating >= 1) AND (rating <= 5)))
 );
 
@@ -440,7 +665,7 @@ CREATE TABLE public.roles (
     name character varying(30) NOT NULL,
     description character varying(255),
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT chk_role_name CHECK (((name)::text = ANY ((ARRAY['ADMIN'::character varying, 'MANAGER'::character varying, 'DOCTOR'::character varying, 'CUSTOMER'::character varying])::text[])))
+    CONSTRAINT chk_role_name CHECK (((name)::text = ANY (ARRAY[('ADMIN'::character varying)::text, ('MANAGER'::character varying)::text, ('DOCTOR'::character varying)::text, ('CUSTOMER'::character varying)::text])))
 );
 
 
@@ -459,7 +684,7 @@ CREATE TABLE public.rooms (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT chk_room_capacity CHECK ((capacity > 0)),
-    CONSTRAINT chk_room_type CHECK (((room_type)::text = ANY ((ARRAY['CONSULTATION'::character varying, 'PROCEDURE'::character varying, 'OTHER'::character varying])::text[])))
+    CONSTRAINT chk_room_type CHECK (((room_type)::text = ANY (ARRAY[('CONSULTATION'::character varying)::text, ('PROCEDURE'::character varying)::text, ('OTHER'::character varying)::text])))
 );
 
 
@@ -483,7 +708,7 @@ CREATE TABLE public.specialisations (
 CREATE TABLE public.users (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     role_id uuid NOT NULL,
-    email character varying(254) NOT NULL,
+    email character varying(512) NOT NULL,
     password_hash character varying(255) NOT NULL,
     account_status character varying(20) DEFAULT 'PENDING'::character varying NOT NULL,
     email_verified boolean DEFAULT false NOT NULL,
@@ -493,10 +718,11 @@ CREATE TABLE public.users (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     token_version integer DEFAULT 1 NOT NULL,
-    CONSTRAINT chk_account_status CHECK (((account_status)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'LOCKED'::character varying, 'SUSPENDED'::character varying, 'DISABLED'::character varying])::text[]))),
+    email_lookup_hash character varying(64) NOT NULL,
+    password_change_required boolean DEFAULT false NOT NULL,
+    CONSTRAINT chk_account_status CHECK (((account_status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text, ('LOCKED'::character varying)::text, ('SUSPENDED'::character varying)::text, ('DISABLED'::character varying)::text, ('DELETED'::character varying)::text]))),
     CONSTRAINT chk_failed_login_attempts CHECK ((failed_login_attempts >= 0)),
-    CONSTRAINT chk_locked_until_status CHECK (((locked_until IS NULL) OR ((account_status)::text = 'LOCKED'::text))),
-    CONSTRAINT chk_users_email_normalized CHECK (((length(btrim((email)::text)) > 0) AND ((email)::text = lower(btrim((email)::text)))))
+    CONSTRAINT chk_locked_until_status CHECK (((locked_until IS NULL) OR ((account_status)::text = 'LOCKED'::text)))
 );
 
 
@@ -717,14 +943,6 @@ ALTER TABLE ONLY public.consultation_summaries
 
 
 --
--- Name: users uq_users_email; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.users
-    ADD CONSTRAINT uq_users_email UNIQUE (email);
-
-
---
 -- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -747,10 +965,24 @@ CREATE INDEX idx_appointments_patient_created ON public.appointments USING btree
 
 
 --
+-- Name: idx_appointments_patient_visible; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_appointments_patient_visible ON public.appointments USING btree (patient_id, created_at DESC) WHERE (patient_hidden_at IS NULL);
+
+
+--
 -- Name: idx_appointments_payment_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_appointments_payment_status ON public.appointments USING btree (payment_status, created_at);
+
+
+--
+-- Name: idx_appointments_session_active_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_appointments_session_active_status ON public.appointments USING btree (session_id, appointment_number) WHERE ((status)::text = ANY ((ARRAY['BOOKED'::character varying, 'CHECKED_IN'::character varying, 'ARRIVED'::character varying, 'IN_CONSULTATION'::character varying])::text[]));
 
 
 --
@@ -761,10 +993,31 @@ CREATE INDEX idx_appointments_session_status_number ON public.appointments USING
 
 
 --
+-- Name: idx_appointments_session_visible_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_appointments_session_visible_number ON public.appointments USING btree (session_id, appointment_number) WHERE (doctor_hidden_at IS NULL);
+
+
+--
+-- Name: idx_audit_logs_appointment_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_logs_appointment_id ON public.audit_logs USING btree (appointment_id);
+
+
+--
 -- Name: idx_audit_logs_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_audit_logs_created_at ON public.audit_logs USING btree (created_at DESC);
+
+
+--
+-- Name: idx_audit_logs_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_logs_user_id ON public.audit_logs USING btree (user_id);
 
 
 --
@@ -929,6 +1182,13 @@ CREATE INDEX idx_users_account_status ON public.users USING btree (account_statu
 
 
 --
+-- Name: idx_users_password_change_required; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_users_password_change_required ON public.users USING btree (password_change_required) WHERE password_change_required;
+
+
+--
 -- Name: idx_users_role_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -939,7 +1199,7 @@ CREATE INDEX idx_users_role_id ON public.users USING btree (role_id);
 -- Name: uq_active_appointment_patient_session; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_active_appointment_patient_session ON public.appointments USING btree (session_id, patient_id) WHERE ((status)::text = ANY ((ARRAY['BOOKED'::character varying, 'ARRIVED'::character varying, 'IN_CONSULTATION'::character varying])::text[]));
+CREATE UNIQUE INDEX uq_active_appointment_patient_session ON public.appointments USING btree (session_id, patient_id) WHERE ((status)::text = ANY ((ARRAY['BOOKED'::character varying, 'CHECKED_IN'::character varying, 'ARRIVED'::character varying, 'IN_CONSULTATION'::character varying])::text[]));
 
 
 --
@@ -957,10 +1217,45 @@ CREATE UNIQUE INDEX uq_patients_nic_lookup_hash ON public.patients USING btree (
 
 
 --
+-- Name: uq_users_email_lookup_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_users_email_lookup_hash ON public.users USING btree (email_lookup_hash) WHERE (email_lookup_hash IS NOT NULL);
+
+
+--
 -- Name: appointments trg_assign_appointment_number; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_assign_appointment_number BEFORE INSERT ON public.appointments FOR EACH ROW EXECUTE FUNCTION public.assign_appointment_number();
+
+
+--
+-- Name: audit_logs trg_audit_logs_no_delete; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_audit_logs_no_delete BEFORE DELETE ON public.audit_logs FOR EACH ROW EXECUTE FUNCTION public.audit_logs_append_only_guard();
+
+
+--
+-- Name: audit_logs trg_audit_logs_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_audit_logs_no_truncate BEFORE TRUNCATE ON public.audit_logs FOR EACH STATEMENT EXECUTE FUNCTION public.audit_logs_append_only_guard();
+
+
+--
+-- Name: audit_logs trg_audit_logs_no_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_audit_logs_no_update BEFORE UPDATE ON public.audit_logs FOR EACH ROW EXECUTE FUNCTION public.audit_logs_append_only_guard();
+
+
+--
+-- Name: appointments trg_enforce_booking_cancellation_rules; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_enforce_booking_cancellation_rules BEFORE UPDATE OF status, cancellation_reason_encrypted ON public.appointments FOR EACH ROW EXECUTE FUNCTION public.enforce_booking_cancellation_rules();
 
 
 --
@@ -975,6 +1270,13 @@ CREATE TRIGGER trg_prevent_session_overlap BEFORE INSERT OR UPDATE ON public.doc
 --
 
 CREATE TRIGGER trg_protect_appointment_history BEFORE DELETE OR UPDATE ON public.appointments FOR EACH ROW EXECUTE FUNCTION public.protect_appointment_history();
+
+
+--
+-- Name: doctor_sessions trg_protect_doctor_session_history; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_protect_doctor_session_history BEFORE DELETE ON public.doctor_sessions FOR EACH ROW EXECUTE FUNCTION public.protect_doctor_session_history();
 
 
 --
@@ -1149,4 +1451,5 @@ ALTER TABLE ONLY public.users
 -- PostgreSQL database dump complete
 --
 
+\unrestrict kZt7b5vWViHiZyAUzgzhkOWCksaK5X26dAGTiIe4dv4g4pYmwmYKCwkdMFjx9tK
 

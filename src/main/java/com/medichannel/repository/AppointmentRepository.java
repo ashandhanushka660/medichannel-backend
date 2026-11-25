@@ -141,7 +141,7 @@ public interface AppointmentRepository
             SELECT a.*
             FROM appointments a
             WHERE a.session_id = :sessionId
-              AND a.status IN ('BOOKED', 'ARRIVED', 'IN_CONSULTATION')
+              AND a.status IN ('BOOKED', 'CHECKED_IN', 'ARRIVED', 'IN_CONSULTATION')
               AND a.appointment_number > :afterNumber
             ORDER BY a.appointment_number ASC
             LIMIT 1 OFFSET 2

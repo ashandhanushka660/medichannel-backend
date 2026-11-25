@@ -39,6 +39,7 @@ public record AppointmentResponse(
         ConsultationType consultationType,
         String roomNumber,
         PaymentMethod paymentMethod,
+        Instant checkedInAt,
         Instant arrivedAt,
         Instant consultationStartedAt,
         Instant consultationCompletedAt,
